@@ -197,7 +197,7 @@ def test_load_direnv_env_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     payload = json.dumps({'DD_API_KEY': 'key-123', 'DD_APP_KEY': 'app-456', 'DIRENV_DIFF': 'x'})
     monkeypatch.setattr(cli.subprocess, 'run', lambda *_args, **_kwargs: _completed(stdout=payload))
 
-    loaded = load_direnv_env(tmp_path)
+    loaded, _stderr = load_direnv_env(tmp_path)
     assert loaded['DD_API_KEY'] == 'key-123'
     assert loaded['DD_APP_KEY'] == 'app-456'
 
@@ -211,7 +211,8 @@ def test_load_direnv_env_unallowed(
     blocked = _completed(stderr=f'direnv: error {tmp_path}/.envrc is blocked. Run `direnv allow`.', returncode=1)
     monkeypatch.setattr(cli.subprocess, 'run', lambda *_args, **_kwargs: blocked)
 
-    assert load_direnv_env(tmp_path) == {}
+    env, _stderr = load_direnv_env(tmp_path)
+    assert env == {}
     assert 'direnv allow' in capsys.readouterr().err
 
 
@@ -225,7 +226,8 @@ def test_load_direnv_env_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         raise AssertionError(msg)
 
     monkeypatch.setattr(cli.subprocess, 'run', _fail)
-    assert load_direnv_env(tmp_path) == {}
+    env, _stderr = load_direnv_env(tmp_path)
+    assert env == {}
 
 
 def test_resolve_credentials_prefers_explicit_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -244,20 +246,27 @@ def test_resolve_credentials_fills_missing_from_direnv_without_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Missing keys are filled from direnv; an explicit value is never overridden."""
-    monkeypatch.setattr(cli, 'load_direnv_env', lambda _d: {'DD_API_KEY': 'direnv-key', 'DD_APP_KEY': 'direnv-app'})
+    monkeypatch.setattr(
+        cli, 'load_direnv_env', lambda _d: ({'DD_API_KEY': 'direnv-key', 'DD_APP_KEY': 'direnv-app'}, '')
+    )
     assert resolve_credentials('flag-key', None, tmp_path) == ('flag-key', 'direnv-app')
 
 
-def test_resolve_credentials_warns_when_envrc_lacks_keys(
+def test_resolve_credentials_surfaces_direnv_reason_when_keys_missing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """An evaluated .envrc that exports no Datadog keys yields a hint naming the missing ones."""
-    # Non-empty dict (direnv ran) but without DD_API_KEY/DD_APP_KEY.
-    monkeypatch.setattr(cli, 'load_direnv_env', lambda _d: {'DIRENV_DIFF': 'x'})
+    """An evaluated .envrc that yields no usable keys names them and echoes direnv's stderr."""
+    # direnv ran (non-empty dict) but the Vault lookups failed, so the keys are absent
+    # and the reason is on stderr.
+    vault_error = 'Error making API request.\nCode: 403. Errors:\n* permission denied'
+    monkeypatch.setattr(cli, 'load_direnv_env', lambda _d: ({'DIRENV_DIFF': 'x'}, vault_error))
     assert resolve_credentials(None, None, tmp_path) == (None, None)
     err = capsys.readouterr().err
     assert 'DD_API_KEY' in err
     assert 'DD_APP_KEY' in err
-    assert 'does not export' in err
+    assert 'did not provide' in err
+    assert 'direnv reported:' in err
+    assert '403' in err
+    assert 'permission denied' in err
