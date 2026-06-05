@@ -1,0 +1,322 @@
+[project]
+name = "datadog_slo_overrides_cli"
+version = "0.0.0"
+description = "CLI to set overrides idempotently for multiple SLO's"
+readme = "README.md"
+authors = [
+    {name = "Yorick Hoorneman", email = "yhoorneman@schubergphilis.com"},
+]
+requires-python = ">=3.13"
+dependencies = [
+    "niquests>=3.7",
+    "typer>=0.12",
+]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+classifiers = [
+    # Python versions supported by the package
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+[project.scripts]
+datadog-slo-overrides = "datadog_slo_overrides_cli.datadog_slo_overrides_cli:main"
+
+[dependency-groups]
+dev = [
+    {include-group = "develop"},
+    {include-group = "document"},
+    {include-group = "lint"},
+    {include-group = "quality"},
+    {include-group = "security"},
+    {include-group = "test"},
+]
+develop = [
+    "pre-commit",
+]
+document = [
+    "properdocs==1.6.7",
+    "properdocs-theme-mkdocs==1.6.7",
+    "mkdocs-include-markdown-plugin",
+    "mkdocstrings[python]==0.30.1",
+]
+lint = [
+    "commitizen",
+    "complexipy",
+    "pylint",
+    "ruff==0.13.1",
+    "ty",
+]
+quality = [
+    "pyscn",
+]
+security = [
+    "cyclonedx-bom",
+    "cyclonedx-python-lib[json-validation]",
+    "pip-audit",
+]
+test = [
+    "pytest",
+    "pytest-cov",
+    "pytest-env",
+    "pytest-html",
+    "pytest-xdist",
+    # Pin uv to match [tool.uv] required-version — tox-uv depends on the uv
+    # Python package, which installs a uv binary into .venv/bin that would
+    # otherwise shadow the image's /usr/local/bin/uv and break the check.
+    "uv==0.11.16",
+    "tox>=4.21",
+    "tox-uv>=1.16",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.15,<=0.11.16"]
+build-backend = "uv_build"
+
+[tool.pyscn.complexity]
+paths = ["src", "tests", "_CI/tasks"]
+low_threshold = 5
+medium_threshold = 10
+max_complexity = 15
+
+[tool.pyscn.dead_code]
+min_severity = "warning"
+
+[tool.pyscn.output]
+directory = "reports"
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_provider = "uv"
+version_scheme = "pep440"
+tag_format = "v$version"
+changelog_file = "docs/changelog.md"
+
+[tool.commitizen.change_type_map]
+feat = "Features"
+fix = "Bug Fixes"
+perf = "Performance"
+refactor = "Refactoring"
+docs = "Documentation"
+build = "Build"
+ci = "CI"
+chore = "Chores"
+revert = "Reverts"
+
+[tool.ruff]
+target-version = "py313"
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+    "scratch",
+    "_CI/lib",
+]
+# Same as Black.
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    # Docstring style conflicts (pick one from each pair)
+    "D203",    # one-blank-line-before-class (conflicts with D211)
+    "D213",    # multi-line-summary-second-line (conflicts with D212)
+    # "D105",    # undocumented-magic-method
+    # "D107",    # undocumented-public-init
+    # "TRY003",  # raise-vanilla-args
+    # "EM101",   # raw-string-in-exception
+    # "EM102",   # f-string-in-exception
+    # "BLE001",  # blind-exception (legitimate in network code)
+    # "FBT001",  # boolean-type-hint-positional-argument
+    # "FBT002",  # boolean-default-value-positional-argument
+    # "PLR0912", # too-many-branches
+    # "PLR0913", # too-many-arguments
+    # "PLR0915", # too-many-statements
+    # "C901",    # complex-structure
+    # "PLC0415", # import-outside-toplevel (used intentionally)
+    # "ANN002",  # missing-type-args
+    # "ANN003",  # missing-type-kwargs
+    # "ANN401",  # dynamically-typed-expression (Any in **kwargs is legitimate)
+    # "TD",      # todo comments
+    # "FIX",     # fixme comments
+    # "ERA",     # commented-out code
+    # Formatter conflicts
+    "COM812",  # missing-trailing-comma (conflicts with formatter)
+    "Q000",    # bad-quotes-inline-string (conflicts with format.quote-style)
+    "Q003",
+]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["S101", "S311", "RUF012", "PLR2004"]
+# Typer's API is built on call-expression defaults (B008) and boolean flag options
+# (FBT001/FBT002/FBT003 — `typer.Option(False, ...)`); the resolved CLI/build
+# functions also legitimately take many parameters (PLR0913). Idiomatic Typer, not smells.
+"src/*.py" = ["UP038", "B008", "FBT001", "FBT002", "FBT003", "PLR0913"]
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "single"
+
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
+
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+
+[tool.ruff.lint.flake8-quotes]
+docstring-quotes = "double"
+
+[tool.ty.environment]
+extra-paths = ["_CI/lib/vendor"]
+
+[tool.pylint.MASTER]
+init-hook = "import sys; sys.path.append('src/'); sys.path.append('_CI/lib/vendor/')"
+
+[tool.pylint."MESSAGES CONTROL"]
+max-line-length = 120
+disable = [
+    "too-few-public-methods",
+    "duplicate-code",
+    "logging-fstring-interpolation",
+    "too-many-ancestors",
+    "import-outside-toplevel",
+    # Complexity thresholds — already enforced by ruff (PLR0912/PLR0913/PLR0915)
+    "too-many-arguments",
+    "too-many-positional-arguments",
+    "too-many-branches",
+    "too-many-statements",
+    "too-many-locals",
+    "too-many-instance-attributes",
+    # Design choices
+    "unused-argument",           # handled by ruff ARG rules
+    "wrong-import-position",     # handled by ruff isort
+    # "broad-exception-caught",    # legitimate in network/auth code
+    # "protected-access",          # companion-object pattern
+]
+
+[tool.pytest.ini_options]
+addopts = [
+    "-n", "auto",
+    "--strict-markers",
+    "--cov", "--cov-report=term-missing",
+    "--cov-report=html:reports/coverage",
+    "--cov-report=json:reports/coverage.json",
+    "--html=reports/tests.html", "--self-contained-html",
+]
+markers = []
+filterwarnings = []
+pythonpath = ["src"]
+testpaths = ["tests"]
+env = []
+env_files = [".env"]
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 0
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "@overload",
+]
+
+[tool.coverage.paths]
+source = [
+    "src/",
+    "*/site-packages/",
+]
+
+[tool.coverage.html]
+directory = "reports/coverage"
+
+[tool.test-ratchet]
+# `auto-detect` (default): the coverage ratchet stays dormant while the scaffolded
+# `test_sanity` function is still present in `tests/test_<slug>.py`. That trivial smoke
+# test produces 100% coverage out of the box, so engaging the ratchet on day one would
+# lock the bar at 100 and fail every subsequent real change. The ratchet activates the
+# moment you remove or rename `test_sanity` — once `[tool.coverage.report] fail_under`
+# is bumped above 0, it never drops back to dormant.
+#
+# `strict`: the ratchet engages immediately, even with the scaffold in place. Useful
+# when you're seeding the template into an existing codebase whose coverage is already
+# meaningful, or when you genuinely want a 100% floor from the first run.
+#
+# Either way, once engaged, the bar only goes up. See
+# docs/explanation/testing-strategy.md for the full design rationale.
+mode = "auto-detect"
+
+
+[tool.uv]
+required-version = "==0.11.16"
+exclude-newer = "1 week"
+
+[tool.tox]
+requires = ["tox>=4.21", "tox-uv>=1.16"]
+env_list = [
+    "py313",
+    "py314",
+]
+
+[tool.tox.env_run_base]
+runner = "uv-venv-lock-runner"
+dependency_groups = ["test"]
+# Per-env coverage data file so `tox run-parallel` doesn't race two writers
+# (pytest-cov + xdist already produces parallel-mode files; without this each
+# env scans the same project root and combines partially-written DBs from the
+# sibling env, producing intermittent `no such table: file` SQLite errors).
+set_env = { COVERAGE_FILE = ".coverage.{envname}" }
+commands = [["pytest", { replace = "posargs", default = [], extend = true }]]
+
+[tool.docker-versions]
+# Container image references consumed by Dockerfiles and CI. The uv version lives in
+# [tool.uv] required-version above — `info.uv-version` parses it from there. The image
+# strings below are kept consistent with that version by hand (uv is mentioned in each).
+base-image = "ghcr.io/astral-sh/uv:0.11.16-python3.13-trixie-slim"
+alpine-image = "ghcr.io/astral-sh/uv:0.11.16-alpine3.22"

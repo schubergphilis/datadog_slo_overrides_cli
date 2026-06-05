@@ -1,0 +1,176 @@
+--- a/_CI/lib/vendor/bin/inv
++++ b/_CI/lib/vendor/bin/inv
+@@ -2,3 +2,10 @@
+ import sys
++from pathlib import Path
++CI_DIRECTORY_NAME = '_CI'
++for directory in Path(__file__).parents:
++    sys.path.insert(0, str(directory))
++    if directory.name == CI_DIRECTORY_NAME:
++        sys.path.insert(0, str(directory.parent))
++        break
+ from invoke.main import program
+ if __name__ == '__main__':
+--- a/_CI/lib/vendor/bin/invoke
++++ b/_CI/lib/vendor/bin/invoke
+@@ -2,3 +2,10 @@
+ import sys
++from pathlib import Path
++CI_DIRECTORY_NAME = '_CI'
++for directory in Path(__file__).parents:
++    sys.path.insert(0, str(directory))
++    if directory.name == CI_DIRECTORY_NAME:
++        sys.path.insert(0, str(directory.parent))
++        break
+ from invoke.main import program
+ if __name__ == '__main__':
+--- a/_CI/lib/vendor/bin/markdown-it
++++ b/_CI/lib/vendor/bin/markdown-it
+@@ -2,3 +2,10 @@
+ import sys
++from pathlib import Path
++CI_DIRECTORY_NAME = '_CI'
++for directory in Path(__file__).parents:
++    sys.path.insert(0, str(directory))
++    if directory.name == CI_DIRECTORY_NAME:
++        sys.path.insert(0, str(directory.parent))
++        break
+ from markdown_it.cli.parse import main
+ if __name__ == '__main__':
+--- a/_CI/lib/vendor/bin/jsonschema
++++ b/_CI/lib/vendor/bin/jsonschema
+@@ -2,3 +2,10 @@
+ import sys
++from pathlib import Path
++CI_DIRECTORY_NAME = '_CI'
++for directory in Path(__file__).parents:
++    sys.path.insert(0, str(directory))
++    if directory.name == CI_DIRECTORY_NAME:
++        sys.path.insert(0, str(directory.parent))
++        break
+ from jsonschema.cli import main
+ if __name__ == '__main__':
+--- a/_CI/lib/vendor/bin/normalizer
++++ b/_CI/lib/vendor/bin/normalizer
+@@ -2,3 +2,10 @@
+ import sys
++from pathlib import Path
++CI_DIRECTORY_NAME = '_CI'
++for directory in Path(__file__).parents:
++    sys.path.insert(0, str(directory))
++    if directory.name == CI_DIRECTORY_NAME:
++        sys.path.insert(0, str(directory.parent))
++        break
+ from charset_normalizer import cli
+ if __name__ == '__main__':
+--- a/_CI/lib/vendor/bin/pygmentize
++++ b/_CI/lib/vendor/bin/pygmentize
+@@ -2,3 +2,10 @@
+ import sys
++from pathlib import Path
++CI_DIRECTORY_NAME = '_CI'
++for directory in Path(__file__).parents:
++    sys.path.insert(0, str(directory))
++    if directory.name == CI_DIRECTORY_NAME:
++        sys.path.insert(0, str(directory.parent))
++        break
+ from pygments.cmdline import main
+ if __name__ == '__main__':
+--- a/_CI/lib/vendor/bin/vendoring
++++ b/_CI/lib/vendor/bin/vendoring
+@@ -2,3 +2,10 @@
+ import sys
++from pathlib import Path
++CI_DIRECTORY_NAME = '_CI'
++for directory in Path(__file__).parents:
++    sys.path.insert(0, str(directory))
++    if directory.name == CI_DIRECTORY_NAME:
++        sys.path.insert(0, str(directory.parent))
++        break
+ from vendoring.cli import main
+ if __name__ == '__main__':
+--- a/_CI/lib/vendor/bin/pip-compile
++++ b/_CI/lib/vendor/bin/pip-compile
+@@ -2,3 +2,10 @@
+ import sys
++from pathlib import Path
++CI_DIRECTORY_NAME = '_CI'
++for directory in Path(__file__).parents:
++    sys.path.insert(0, str(directory))
++    if directory.name == CI_DIRECTORY_NAME:
++        sys.path.insert(0, str(directory.parent))
++        break
+ from piptools.scripts.compile import cli
+ if __name__ == '__main__':
+--- a/_CI/lib/vendor/bin/pip-sync
++++ b/_CI/lib/vendor/bin/pip-sync
+@@ -2,3 +2,10 @@
+ import sys
++from pathlib import Path
++CI_DIRECTORY_NAME = '_CI'
++for directory in Path(__file__).parents:
++    sys.path.insert(0, str(directory))
++    if directory.name == CI_DIRECTORY_NAME:
++        sys.path.insert(0, str(directory.parent))
++        break
+ from piptools.scripts.sync import cli
+ if __name__ == '__main__':
+--- a/_CI/lib/vendor/bin/pyproject-build
++++ b/_CI/lib/vendor/bin/pyproject-build
+@@ -2,3 +2,10 @@
+ import sys
++from pathlib import Path
++CI_DIRECTORY_NAME = '_CI'
++for directory in Path(__file__).parents:
++    sys.path.insert(0, str(directory))
++    if directory.name == CI_DIRECTORY_NAME:
++        sys.path.insert(0, str(directory.parent))
++        break
+ from build.__main__ import entrypoint
+ if __name__ == '__main__':
+--- a/_CI/lib/vendor/bin/wheel
++++ b/_CI/lib/vendor/bin/wheel
+@@ -2,3 +2,10 @@
+ import sys
++from pathlib import Path
++CI_DIRECTORY_NAME = '_CI'
++for directory in Path(__file__).parents:
++    sys.path.insert(0, str(directory))
++    if directory.name == CI_DIRECTORY_NAME:
++        sys.path.insert(0, str(directory.parent))
++        break
+ from wheel.cli import main
+ if __name__ == '__main__':
+--- a/_CI/lib/vendor/bin/coloredlogs
++++ b/_CI/lib/vendor/bin/coloredlogs
+@@ -2,3 +2,10 @@
+ import sys
++from pathlib import Path
++CI_DIRECTORY_NAME = '_CI'
++for directory in Path(__file__).parents:
++    sys.path.insert(0, str(directory))
++    if directory.name == CI_DIRECTORY_NAME:
++        sys.path.insert(0, str(directory.parent))
++        break
+ from coloredlogs.cli import main
+ if __name__ == '__main__':
+--- a/_CI/lib/vendor/bin/humanfriendly
++++ b/_CI/lib/vendor/bin/humanfriendly
+@@ -2,3 +2,10 @@
+ import sys
++from pathlib import Path
++CI_DIRECTORY_NAME = '_CI'
++for directory in Path(__file__).parents:
++    sys.path.insert(0, str(directory))
++    if directory.name == CI_DIRECTORY_NAME:
++        sys.path.insert(0, str(directory.parent))
++        break
+ from humanfriendly.cli import main
+ if __name__ == '__main__':
+diff --git a/_CI/lib/vendor/invoke/vendor/lexicon/_version.py b/_CI/lib/vendor/invoke/vendor/lexicon/_version.py
+new file mode 100644
+--- /dev/null
++++ b/_CI/lib/vendor/invoke/vendor/lexicon/_version.py
+@@ -0,0 +1,2 @@
++__version_info__ = (1, 3, 0)
++__version__ = ".".join(map(str, __version_info__))
