@@ -22,3 +22,7 @@
 # CVE-2024-1234::2026-12-31
 # GHSA-xxxx-yyyy-zzzz
 # PYSEC-2025-0001
+
+# pip 26.1.1 -> fixed in 26.1.2, but selection is blocked by [tool.uv] exclude-newer.
+# Expires so the audit re-checks once 26.1.2 is selectable via `uv lock --upgrade-package pip`.
+PYSEC-2026-196::2026-06-19
