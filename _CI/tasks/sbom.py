@@ -24,7 +24,7 @@ from cyclonedx.output.json import JsonV1Dot7
 from packageurl import PackageURL
 
 from .configuration import PROJECT_NAME, SBOM_FILE, UV_LOCK, VENDOR_DIR, VENDOR_TXT
-from .gitlab import iter_pipeline_components
+from .github import iter_pipeline_components
 from .shared import PipelineComponent
 
 REQUIREMENT_PATTERN = re.compile(r'^([A-Za-z0-9._\-]+)==([A-Za-z0-9._\-+]+)')
@@ -471,7 +471,7 @@ def build_bom():
     supplier = project_supplier(project_meta)
     if supplier is not None:
         bom.metadata.supplier = supplier
-    bom.metadata.properties.add(Property(name='paleofuturistic:git_hosting_service', value='gitlab'))
+    bom.metadata.properties.add(Property(name='paleofuturistic:git_hosting_service', value='github'))
 
     bom.components.add(build_env)
     runtime_components: list = []

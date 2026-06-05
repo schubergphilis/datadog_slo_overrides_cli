@@ -1,0 +1,49 @@
+name: Build dependency image
+
+on:
+  workflow_call:
+    outputs:
+      image:
+        description: Dependency image reference
+        value: ${{ jobs.build-deps-image.outputs.image }}
+
+jobs:
+  build-deps-image:
+    name: Build dependency image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.deps.outputs.image }}
+
+    steps:
+      - name: Checkout repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git init -b main
+          remote_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git remote get-url origin >/dev/null 2>&1; then
+            git remote set-url origin "${remote_url}"
+          else
+            git remote add origin "${remote_url}"
+          fi
+          git fetch --depth=1 origin "${GITHUB_SHA}"
+          git checkout --force FETCH_HEAD
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Publish deps image
+        id: deps
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./workflow.cmd container.publish
+          echo "image=$(cat .deps-image)" >> "$GITHUB_OUTPUT"
+
+      - name: Minimize uv cache
+        run: uv cache prune --ci

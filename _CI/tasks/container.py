@@ -9,7 +9,7 @@ from invoke import Collection, Context, Task, task
 from _CI.info import read as read_info
 
 from .configuration import IMAGE_NAME
-from .gitlab import publish_deps_image
+from .github import publish_deps_image
 from .shared import container_engine, execute, is_ci, logged
 
 
@@ -30,7 +30,7 @@ def build(context: Context) -> None:
 def publish(context: Context) -> None:
     """Build the deps image and publish to a container registry (CI) or keep it local.
 
-    In CI: delegates to the host-specific submodule (``gitlab``)
+    In CI: delegates to the host-specific submodule (``github``)
     to log in and push.
 
     Locally: builds and tags the image without pushing anywhere.

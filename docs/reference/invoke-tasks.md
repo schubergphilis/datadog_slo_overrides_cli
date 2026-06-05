@@ -81,4 +81,4 @@ The shortcuts below resolve to a namespace's default task (the one added with `d
 
 Functions in `_CI/tasks/shared.py` (notably the `@logged` decorator, the `IndentingStream` plumbing, `execute`, `run_steps`) are used *by* tasks and not directly callable. See [The _CI tasks architecture](../explanation/the-ci-tasks-architecture.md).
 
-Host-specific helpers live in `_CI/tasks/gitlab.py` and are imported by `container.py` and `release.py` via a Jinja-substituted import.
+Host-specific helpers live in `_CI/tasks/github.py` and are imported by `container.py` and `release.py` via a Jinja-substituted import.

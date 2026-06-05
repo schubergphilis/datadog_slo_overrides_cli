@@ -10,7 +10,7 @@ from invoke import Collection, Context, Task, task
 
 from .build import build
 from .configuration import OIDC_ENV_VARS, SBOM_FILE, UV_PUBLISH_SETTINGS
-from .gitlab import create_release_pr, pr_create_url
+from .github import create_release_pr, pr_create_url
 from .shared import execute, logged
 
 

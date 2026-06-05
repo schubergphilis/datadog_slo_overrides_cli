@@ -1,0 +1,105 @@
+name: Publish
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  detect:
+    name: Detect release tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.find.outputs.tag }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - id: find
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          if [ "${BEFORE}" = "0000000000000000000000000000000000000000" ]; then
+            range="${AFTER}"
+          else
+            range="${BEFORE}..${AFTER}"
+          fi
+          tag=""
+          for sha in $(git log "${range}" --format='%H'); do
+            candidate=$(git tag --points-at "${sha}" | grep -E '^v[0-9]' | head -n1 || true)
+            if [ -n "${candidate}" ]; then
+              tag="${candidate}"
+              break
+            fi
+          done
+          if [ -n "${tag}" ]; then
+            echo "Release tag detected: ${tag}"
+            echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "No v-prefixed tag on the incoming commits; publish will skip."
+          fi
+
+  build-deps-image:
+    needs: detect
+    if: ${{ needs.detect.outputs.tag != '' }}
+    uses: ./.github/workflows/build-deps-image.yaml
+    permissions:
+      contents: read
+      packages: write
+
+  publish:
+    name: Publish package
+    needs: [detect, build-deps-image]
+    if: ${{ needs.detect.outputs.tag != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      # Required for PyPI Trusted Publishing. GitHub Actions only injects
+      # ACTIONS_ID_TOKEN_REQUEST_URL / _TOKEN when the job can write OIDC
+      # tokens; without this, `uv publish` has nothing to exchange and
+      # `release.publish` falls back to legacy UV_PUBLISH_* credentials.
+      id-token: write
+      # Declaring any `permissions:` entry flips every other scope to `none`
+      # for this job. The checkout step needs read access to clone the
+      # release tag via x-access-token:${GITHUB_TOKEN} — without this it 403s.
+      # Kept at `read` (not write) so a compromised build step cannot push
+      # back to the repo.
+      contents: read
+      # The job runs inside the deps image from ghcr.io. Pulling that image
+      # uses GITHUB_TOKEN via the `container.credentials` block; without
+      # `packages: read` ghcr returns 403 on the manifest HEAD request.
+      # `read` only — `build-deps-image` is the job that publishes.
+      packages: read
+    container:
+      image: ${{ needs.build-deps-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    environment: pypi
+
+    steps:
+      - name: Configure git
+        run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+
+      - name: Checkout release tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.detect.outputs.tag }}
+        run: |
+          git init -b main
+          remote_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git remote get-url origin >/dev/null 2>&1; then
+            git remote set-url origin "${remote_url}"
+          else
+            git remote add origin "${remote_url}"
+          fi
+          git fetch --depth=1 origin "+refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          git checkout --force "refs/tags/${RELEASE_TAG}"
+
+      - name: Publish package and upload SBOM
+        env:
+          UV_PUBLISH_URL: ${{ secrets.UV_PUBLISH_URL }}
+          UV_PUBLISH_PASSWORD: ${{ secrets.UV_PUBLISH_PASSWORD }}
+          UV_PUBLISH_USERNAME: ${{ secrets.UV_PUBLISH_USERNAME }}
+        run: ./workflow.cmd release.publish

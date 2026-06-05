@@ -16,7 +16,7 @@ Uses the detected container engine (docker or podman) to build `datadog_slo_over
 ./workflow.cmd container.publish
 ```
 
-In CI, this delegates to the host-specific publish in `_CI/tasks/gitlab.py`:
+In CI, this delegates to the host-specific publish in `_CI/tasks/github.py`:
 
 - **GitHub**: logs into `ghcr.io` with `GITHUB_ACTOR` / `GITHUB_TOKEN`, checks for an existing tag, builds and pushes only if missing.
 - **GitLab**: writes kaniko credentials from `CI_REGISTRY_*` and runs the kaniko executor (daemonless build + push). Required where privileged docker-in-docker isn't allowed.

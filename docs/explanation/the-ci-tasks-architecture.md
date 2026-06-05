@@ -89,7 +89,7 @@ The host (`github` or `gitlab`) chosen at generation time determines which of `_
 - `create_release_pr(context, branch, version) -> str`
 - `pr_create_url(context, branch) -> str`
 
-`container.py` and `release.py` import these via a Jinja-substituted relative import — `from .gitlab import …` — which renders at generation time to a concrete `from .github import …` or `from .gitlab import …`. Because the unchosen module is omitted at generation time via a copier conditional filename (the file's rendered name is empty when not selected), there's exactly one code path and no runtime branching.
+`container.py` and `release.py` import these via a Jinja-substituted relative import — `from .github import …` — which renders at generation time to a concrete `from .github import …` or `from .gitlab import …`. Because the unchosen module is omitted at generation time via a copier conditional filename (the file's rendered name is empty when not selected), there's exactly one code path and no runtime branching.
 
 ## See also
 

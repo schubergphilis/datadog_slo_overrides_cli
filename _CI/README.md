@@ -9,7 +9,7 @@ All dependencies ship in `lib/vendor/`, so `./workflow.cmd` works immediately af
 
 **Run-once bootstrap.** A sentinel file (`_CI/.bootstrapped`) ensures first-time setup (pre-commit installation, etc.) runs exactly once. Every task inherits bootstrap as an Invoke `pre` task, so it triggers automatically on first use and is a no-op thereafter. Pass `--force` to re-run.
 
-**CI-aware.** Bootstrap steps declare a `ci_behavior` (`'run'` or `'skip'`). When the `CI` environment variable is set (GitLab CI), interactive prompts are suppressed and steps execute or skip accordingly.
+**CI-aware.** Bootstrap steps declare a `ci_behavior` (`'run'` or `'skip'`). When the `CI` environment variable is set (GitHub Actions), interactive prompts are suppressed and steps execute or skip accordingly.
 
 **Fail-last reporting.** `run_steps()` runs all steps even if earlier ones fail, then reports every failure before raising `SystemExit(1)`. No silent swallowing, no short-circuiting.
 

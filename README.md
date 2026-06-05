@@ -16,9 +16,9 @@
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org)
 [![Changelog](https://img.shields.io/badge/changelog-Keep%20a%20Changelog%201.1.0-orange)](https://keepachangelog.com/en/1.1.0/)
 [![Documentation: Diátaxis](https://img.shields.io/badge/docs-Di%C3%A1taxis-009485?logo=readthedocs&logoColor=white)](https://diataxis.fr/)
-[![Pipeline](https://img.shields.io/badge/pipeline-unknown-lightgrey)](https://docs.gitlab.com/ee/ci/)
+[![Build](https://img.shields.io/badge/build-unknown-lightgrey)](https://github.com/features/actions)
 [![Coverage](https://img.shields.io/badge/coverage-60%25-orange)](https://coverage.readthedocs.io/)
-[![pyscn quality](https://img.shields.io/badge/pyscn-C-yellow)](https://pyscn.ludo-tech.org)
+[![pyscn quality](https://img.shields.io/badge/pyscn-not%20rated-lightgrey)](https://pyscn.ludo-tech.org)
 
 CLI to set overrides idempotently for multiple SLO's
 
