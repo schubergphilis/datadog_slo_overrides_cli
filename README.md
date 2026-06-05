@@ -18,15 +18,113 @@
 [![Documentation: Diátaxis](https://img.shields.io/badge/docs-Di%C3%A1taxis-009485?logo=readthedocs&logoColor=white)](https://diataxis.fr/)
 [![Pipeline](https://img.shields.io/badge/pipeline-unknown-lightgrey)](https://docs.gitlab.com/ee/ci/)
 [![Coverage](https://img.shields.io/badge/coverage-60%25-orange)](https://coverage.readthedocs.io/)
-[![pyscn quality](https://img.shields.io/badge/pyscn-not%20rated-lightgrey)](https://pyscn.ludo-tech.org)
+[![pyscn quality](https://img.shields.io/badge/pyscn-C-yellow)](https://pyscn.ludo-tech.org)
 
 CLI to set overrides idempotently for multiple SLO's
 
 ## Usage
 
-Legacy: `pip install datadog_slo_overrides_cli`
+<!-- usage-start -->
+Set Datadog **SLO corrections** ("SLO overrides") on many SLOs at once, selected by tag.
+A correction excludes a time window from an SLO's error budget (e.g. for planned downtime);
+this tool is the bulk, idempotent, scriptable way to apply them.
 
-Preferred: `uv add datadog_slo_overrides_cli`
+### Install
+
+```sh
+uv tool install datadog-slo-overrides       # global `datadog-slo-overrides` command
+# or run without installing:
+uvx datadog-slo-overrides --help
+# or, from a checkout:
+uv run datadog-slo-overrides --help
+```
+
+### Commands
+
+| Command | What it does |
+|---------|--------------|
+| `run` | Preview (default) or `--apply` corrections to every SLO matching the tags. |
+| `init-config` | Write a starter config of non-secret defaults. |
+| `init-envrc` | Write a starter `.envrc` for optional, direnv-managed credential loading. |
+
+### Credentials
+
+The tool never stores credentials. They are resolved in this order (first wins):
+
+1. `--api-key` / `--app-key` flags
+2. `DD_API_KEY` / `DD_APP_KEY` environment variables
+3. an optional `.envrc` in the config dir, loaded via [direnv](https://direnv.net/)
+
+direnv-loaded values can never override a flag or a real environment variable.
+
+**Optional direnv setup** (keep secret-fetching logic in a file that direnv's approval model governs,
+rather than the tool executing shell itself):
+
+```sh
+datadog-slo-overrides init-envrc                 # writes ~/.config/datadog-slo-overrides/.envrc
+# edit it to `export DD_API_KEY=...` / `export DD_APP_KEY=...` (e.g. from Vault), then:
+direnv allow ~/.config/datadog-slo-overrides
+```
+
+If the `.envrc` is present but unapproved, or doesn't export the keys, the tool prints an
+actionable hint instead of failing silently. The config dir honours `XDG_CONFIG_HOME`.
+
+### Selecting SLOs
+
+- `--tag key:value` — repeat to require several tags. One tag is sent to Datadog's
+  (single-tag) server query; the rest are ANDed client-side.
+- `--tags-query "<raw>"` — a raw single-tag Datadog query, used as-is instead of `--tag`.
+
+### Idempotency strategies
+
+`run` is idempotent: re-running the same command never creates duplicate corrections.
+`--strategy` controls when an existing correction counts as already covering your window:
+
+| `--strategy` | Skips (creates nothing) when… |
+|--------------|-------------------------------|
+| `skip-if-covered` *(default)* | your window is **fully inside** an existing correction |
+| `skip-if-overlap` | any existing correction **overlaps** your window (may leave gaps) |
+| `skip-if-exact` | an existing correction matches your window **exactly** |
+
+### Examples
+
+Preview which SLOs would be corrected (dry run — nothing is written):
+
+```sh
+datadog-slo-overrides run --tag app:gitlab --tag customer:sbp \
+    --start 2026-06-10T22:00 --end 2026-06-11T00:00
+```
+
+Apply a 2-hour scheduled-maintenance correction:
+
+```sh
+datadog-slo-overrides run --tag app:gitlab --tag customer:sbp \
+    --start 2026-06-10T22:00 --end 2026-06-11T00:00 \
+    --category "Scheduled Maintenance" --description "DB maintenance" \
+    --apply
+```
+
+When a matched SLO is already covered, it is skipped rather than duplicated:
+
+```text
+Already satisfied under --strategy skip-if-covered (will skip): 1
+  SBP - SLO monitor for the sbp gitlab Website  (fbb8a2c3…)  -> correction d9e08dd2-…
+
+DRY RUN — would create 0, skip 1 already present. Re-run with --apply to write.
+```
+
+### Configuration file
+
+`init-config` writes non-secret defaults (`site`, `timezone`, `category`, `strategy`) to
+`~/.config/datadog-slo-overrides/config.toml`. CLI flags override the config, which overrides
+the built-in defaults. Credentials are **never** read from this file.
+
+```sh
+datadog-slo-overrides init-config
+```
+
+Run `datadog-slo-overrides run --help` for the full list of options.
+<!-- usage-end -->
 
 ## Developing further
 

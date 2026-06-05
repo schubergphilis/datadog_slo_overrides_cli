@@ -16,6 +16,7 @@ nav:
     - First-run setup: tutorials/first-run-setup.md
     - Make your first release: tutorials/make-your-first-release.md
   - How-to:
+    - Use the CLI: how-to/use-the-cli.md
     - Add a dependency: how-to/add-a-dependency.md
     - Add a workflow task: how-to/add-a-workflow-task.md
     - Run tests for one Python version: how-to/run-tests-for-one-python-version.md
