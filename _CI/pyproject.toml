@@ -1,0 +1,47 @@
+[project]
+name = 'backbone-template'
+version = '0.1.0'
+description = 'A vendored version of invoke that can be used to construct portable development workflows with no dependencies other than a recent version of python.'
+requires-python = ">=3.12"
+
+[build-system]
+requires = ['setuptools', 'wheel']
+build-backend = "setuptools.build_meta"
+
+[project.optional-dependencies]
+vendor = ['vendoring', 'invoke', 'pip-tools', 'emoji', 'coloredlogs', 'lexicon']
+
+[tool.vendoring]
+destination = './lib/vendor/'
+requirements = './lib/vendor.txt'
+namespace = 'lib.vendor'
+
+protected-files = ['__init__.py', 'vendor.txt']
+patches-dir = './lib/patches'
+
+[tool.setuptools]
+py-modules = []  # https://github.com/jazzband/pip-tools/issues/1711 :facepalm:
+
+[tool.vendoring.transformations]
+substitute = [
+    { match = 'import pygments.', replace = 'import lib.vendor.pygments.' },
+    { match = 'import jsonschema.validators', replace = 'import lib.vendor.jsonschema.validators' },
+    { match = 'import urllib3.', replace = 'import lib.vendor.urllib3.' },
+    { match = 'import rich.traceback', replace = 'import lib.vendor.rich.traceback; from lib.vendor import rich' },
+    { match = 'import wheel.cli', replace = 'import lib.vendor.wheel.cli' },
+    { match = 'import build.env', replace = 'import lib.vendor.build.env' },
+    { match = ' packaging.', replace = ' lib.vendor.packaging.' },
+    { match = 'import referencing.', replace = 'import lib.vendor.referencing.jsonschema' },
+]
+drop = [
+    'pygments/styles/[!_]*.py',
+    '^pygments/lexers/(?!python|__init__|_mapping).*\.py$',
+    'jsonschema/tests',
+    'coloredlogs/tests.py'
+]
+
+[tool.ruff]
+line-length = 121
+
+[tool.ruff.format]
+quote-style = "single"

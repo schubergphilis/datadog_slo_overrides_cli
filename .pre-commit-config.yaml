@@ -1,0 +1,67 @@
+default_install_hook_types: [pre-commit, commit-msg]
+repos:
+  - repo: local
+    hooks:
+      - id: lint-commit
+        name: Lint commit message
+        description: "Example: feat: added new feature"
+        entry: sh -c './workflow.cmd lint.commitizen --commit-msg-file="$1"' --
+        language: system
+        pass_filenames: true
+        stages: [commit-msg]
+      - id: format
+        name: Format code and sort imports
+        entry: ./workflow.cmd format
+        language: system
+        pass_filenames: false
+        files: ^(_CI/tasks/|src/|tests/).*\.py$
+        stages: [pre-commit]
+      - id: ruff
+        name: Lint with ruff
+        entry: ./workflow.cmd lint.ruff
+        language: system
+        pass_filenames: false
+        files: ^(_CI/tasks/|src/|tests/).*\.py$
+        stages: [pre-commit]
+      - id: pylint
+        name: Lint with pylint
+        entry: ./workflow.cmd lint.pylint
+        language: system
+        pass_filenames: false
+        files: ^(_CI/tasks/|src/|tests/).*\.py$
+        stages: [pre-commit]
+      - id: ty
+        name: Type check with ty
+        entry: ./workflow.cmd lint.ty
+        language: system
+        pass_filenames: false
+        files: ^(_CI/tasks/|src/|tests/).*\.py$
+        stages: [pre-commit]
+      - id: complexipy
+        name: Complexity check with complexipy
+        entry: ./workflow.cmd lint.complexipy
+        language: system
+        pass_filenames: false
+        files: ^(src/).*\.py$
+        stages: [pre-commit]
+      - id: pyscn
+        name: Quality check with pyscn
+        entry: ./workflow.cmd quality.pyscn-check
+        language: system
+        pass_filenames: false
+        files: ^(src/).*\.py$
+        stages: [pre-commit]
+      - id: test
+        name: Run tests
+        entry: ./workflow.cmd test
+        language: system
+        pass_filenames: false
+        files: ^(src/|tests/).*\.py$
+        stages: [pre-commit]
+      - id: security-overrides
+        name: Validate .security-overrides
+        entry: ./workflow.cmd secure.validate-overrides
+        language: system
+        pass_filenames: false
+        files: ^\.security-overrides$
+        stages: [pre-commit]

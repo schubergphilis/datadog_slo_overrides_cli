@@ -1,0 +1,13 @@
+#!/Users/ctyfoxylos/Library/Caches/uv/archive-v0/ulc6qXsaptnAmTo41dYbx/bin/python
+import sys
+from pathlib import Path
+CI_DIRECTORY_NAME = '_CI'
+for directory in Path(__file__).parents:
+    sys.path.insert(0, str(directory))
+    if directory.name == CI_DIRECTORY_NAME:
+        sys.path.insert(0, str(directory.parent))
+        break
+from vendoring.cli import main
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(main())

@@ -1,0 +1,88 @@
+stages:
+  - deps
+  - ci
+  - publish
+
+variables:
+  # Recommended by uv's GitLab guide — hardlinks can't span GitLab's mount
+  # boundaries, so downstream jobs that run `uv run` need copy mode.
+  UV_LINK_MODE: copy
+
+build-deps-image:
+  stage: deps
+  # kaniko:debug has no python/uv and its busybox binaries are static, which
+  # uv's libc probe refuses. This is the one pipeline job that can't go
+  # through ./workflow.cmd — the container.publish steps are inlined here so
+  # the bootstrap needs nothing beyond kaniko + busybox. Every other job
+  # runs inside $DEPS_IMAGE (built here) where ./workflow.cmd works normally.
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  script:
+    - TAG=$(sha256sum uv.lock | cut -c1-16)
+    # Push to $CI_REGISTRY_IMAGE (the project's registry root) with a
+    # deps-prefixed tag. SBP's registry restricts deploy tokens to the
+    # root path only — /deps and -deps subpaths both return DENIED.
+    - IMAGE="${CI_REGISTRY_IMAGE}:deps-${TAG}"
+    - BASE_IMAGE=$(sed -n 's/^base-image = "\(.*\)"$/\1/p' pyproject.toml)
+    - mkdir -p /kaniko/.docker
+    # SBP's registry rejects the default CI_JOB_TOKEN for pushes, so this job
+    # authenticates with a project Deploy Token (scopes: read_registry +
+    # write_registry). Create one at Settings → Repository → Deploy tokens,
+    # then expose as protected/masked CI variables DEPS_IMAGE_USERNAME and
+    # DEPS_IMAGE_PASSWORD.
+    - '[ -n "$DEPS_IMAGE_USERNAME" ] && echo "DEPS_IMAGE_USERNAME is set" || echo "DEPS_IMAGE_USERNAME EMPTY"'
+    - '[ -n "$DEPS_IMAGE_PASSWORD" ] && echo "DEPS_IMAGE_PASSWORD is set" || echo "DEPS_IMAGE_PASSWORD EMPTY"'
+    - printf '{"auths":{"%s":{"username":"%s","password":"%s"}}}' "$CI_REGISTRY" "$DEPS_IMAGE_USERNAME" "$DEPS_IMAGE_PASSWORD" > /kaniko/.docker/config.json
+    - /kaniko/executor --dockerfile=Dockerfile.deps --context=. --destination="$IMAGE" --build-arg=BASE_IMAGE="$BASE_IMAGE"
+    - echo "DEPS_IMAGE=$IMAGE" > .deps-image.env
+  artifacts:
+    reports:
+      dotenv: .deps-image.env
+
+lint:
+  stage: ci
+  image: $DEPS_IMAGE
+  needs:
+    - job: build-deps-image
+      artifacts: true
+  before_script:
+    - git config --global --add safe.directory "$CI_PROJECT_DIR"
+  script:
+    - ./workflow.cmd lint
+
+test:
+  stage: ci
+  image: $DEPS_IMAGE
+  needs:
+    - job: build-deps-image
+      artifacts: true
+  before_script:
+    - git config --global --add safe.directory "$CI_PROJECT_DIR"
+  script:
+    - ./workflow.cmd test.tox
+
+build:
+  stage: ci
+  image: $DEPS_IMAGE
+  needs:
+    - job: build-deps-image
+      artifacts: true
+  before_script:
+    - git config --global --add safe.directory "$CI_PROJECT_DIR"
+  script:
+    - ./workflow.cmd build
+
+publish:
+  stage: publish
+  image: $DEPS_IMAGE
+  needs:
+    - job: build-deps-image
+      artifacts: true
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+  environment: pypi
+  before_script:
+    - git config --global --add safe.directory "$CI_PROJECT_DIR"
+  script:
+    - ./workflow.cmd release.publish

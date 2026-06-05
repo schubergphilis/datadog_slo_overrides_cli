@@ -1,0 +1,72 @@
+site_name: datadog slo overrides CLI
+site_author: Yorick Hoorneman
+site_description: CLI to set overrides idempotently for multiple SLO's
+
+theme:
+  name: mkdocs
+  color_mode: auto
+  user_color_mode_toggle: true
+  locale: en
+
+use_directory_urls: false
+
+nav:
+  - Home: index.md
+  - Tutorials:
+    - First-run setup: tutorials/first-run-setup.md
+    - Make your first release: tutorials/make-your-first-release.md
+  - How-to:
+    - Add a dependency: how-to/add-a-dependency.md
+    - Add a workflow task: how-to/add-a-workflow-task.md
+    - Run tests for one Python version: how-to/run-tests-for-one-python-version.md
+    - Triage a security finding: how-to/triage-a-security-finding.md
+    - Customize the bootstrap: how-to/customize-the-bootstrap.md
+    - Build and push a container: how-to/build-and-push-a-container.md
+    - Preview docs locally: how-to/preview-docs-locally.md
+    - Upload an SBOM to Dependency Track: how-to/upload-an-sbom-to-dependency-track.md
+  - Reference:
+    - API: reference/api.md
+    - Invoke task catalog: reference/invoke-tasks.md
+    - Dependency groups: reference/dependency-groups.md
+    - Configuration files: reference/configuration-files.md
+    - Changelog: reference/changelog.md
+  - Explanation:
+    - Why uv: explanation/why-uv.md
+    - The _CI tasks architecture: explanation/the-ci-tasks-architecture.md
+    - SBOM and security model: explanation/sbom-and-security-model.md
+    - Testing strategy: explanation/testing-strategy.md
+
+watch:
+  - src
+
+plugins:
+- include-markdown
+- mkdocstrings:
+    handlers:
+      python:
+        inventories:
+        - url: https://docs.python.org/3/objects.inv
+          domains: [std, py]
+        - https://typing-extensions.readthedocs.io/en/latest/objects.inv
+        paths: [src]
+        options:
+          backlinks: tree
+          docstring_options:
+            ignore_init_summary: true
+          docstring_style: google
+          docstring_section_style: list
+          heading_level: 4
+          inherited_members: true
+          merge_init_into_class: true
+          parameter_headings: true
+          separate_signature: true
+          show_bases: true
+          show_inheritance_diagram: true
+          show_root_heading: true
+          show_root_full_path: false
+          show_source: false
+          show_signature_annotations: true
+          show_symbol_type_heading: true
+          show_symbol_type_toc: true
+          signature_crossrefs: true
+          summary: true

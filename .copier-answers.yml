@@ -1,0 +1,14 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: f8190d3
+_src_path: git+https://github.com/costastf/paleofuturistic_python
+email: yhoorneman@schubergphilis.com
+full_name: Yorick Hoorneman
+git_hosting_service: gitlab
+integrate_dependency_track: false
+integrate_pages: false
+license: Apache-2.0
+max_python_version: '3.14'
+min_python_version: '3.13'
+project_description: CLI to set overrides idempotently for multiple SLO's
+project_name: datadog slo overrides CLI
+project_slug: datadog_slo_overrides_cli

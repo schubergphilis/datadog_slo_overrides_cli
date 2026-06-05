@@ -1,0 +1,24 @@
+# Security suppressions read by `./workflow.cmd secure.audit` (pip-audit).
+#
+# One entry per line. Blank lines and `#` comments are ignored.
+#
+# Format: <VULN_ID>[::YYYY-MM-DD]
+#
+#   <VULN_ID>       A CVE, GHSA, or PYSEC identifier (letters, digits,
+#                   dashes, underscores).
+#   ::YYYY-MM-DD    Optional expiry. When the date passes, the entry
+#                   stops suppressing and the audit flags the
+#                   vulnerability again — forcing a re-review on that
+#                   date. Omit the expiry for a permanent suppression
+#                   (discouraged — it will never be re-surfaced by CI).
+#
+# `secure.audit` also merges any `--ignore` CLI value and the
+# <PROJECT>_SECURITY_OVERRIDE environment variable into the same list,
+# so entries here travel with the repo but can be augmented per-run.
+# Invalid entries abort the task with a `file:line: <reason>` message.
+#
+# Examples (uncomment and edit — do not leave sample IDs active):
+#
+# CVE-2024-1234::2026-12-31
+# GHSA-xxxx-yyyy-zzzz
+# PYSEC-2025-0001

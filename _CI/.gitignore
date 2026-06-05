@@ -1,0 +1,3 @@
+# The vendor directory is intentionally tracked so generated projects
+# work out of the box without needing to restore dependencies.
+!lib/

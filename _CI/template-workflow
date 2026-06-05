@@ -1,0 +1,1 @@
+python lib/vendor/bin/invoke --collection lib/tasks/ "${@}"
