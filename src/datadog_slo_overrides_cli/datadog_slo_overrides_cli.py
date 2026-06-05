@@ -528,55 +528,66 @@ def _run_direnv_export(directory: Path) -> subprocess.CompletedProcess[str] | No
     )
 
 
-def load_direnv_env(directory: Path) -> dict[str, str]:
-    """Return the environment variables an optional ``.envrc`` produces via direnv.
+def load_direnv_env(directory: Path) -> tuple[dict[str, str], str]:
+    """Return the variables an optional ``.envrc`` produces via direnv, plus direnv's stderr.
 
-    Returns ``{}`` silently when direnv isn't installed or there's no ``.envrc``.
-    When direnv refuses an unapproved ``.envrc``, prints an actionable hint and
-    returns ``{}`` rather than crashing.
+    Returns ``({}, '')`` silently when direnv isn't installed or there's no
+    ``.envrc``. When direnv refuses an unapproved ``.envrc``, prints an actionable
+    hint and returns ``({}, <stderr>)`` rather than crashing. The stderr is
+    returned so callers can surface *why* the ``.envrc`` produced no usable values
+    (e.g. a Vault command inside it failing), since direnv runs the file itself.
 
     Args:
         directory: Directory whose ``.envrc`` should be evaluated.
 
     Returns:
-        A mapping of exported variable names to string values.
+        A ``(exported vars, direnv stderr)`` pair.
     """
     result = _run_direnv_export(directory)
     if result is None:
-        return {}
+        return {}, ''
     if result.returncode != 0 or _envrc_is_blocked(result.stderr):
         typer.echo(
             f'direnv could not load {directory}/.envrc (not approved?). Run: direnv allow {directory}',
             err=True,
         )
-        return {}
+        return {}, result.stderr
     stdout = result.stdout.strip()
     if not stdout:
-        return {}
+        return {}, result.stderr
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
-        return {}
-    return {key: value for key, value in data.items() if isinstance(value, str)}
+        return {}, result.stderr
+    return {key: value for key, value in data.items() if isinstance(value, str)}, result.stderr
 
 
-def _warn_if_envrc_lacks_keys(directory: Path, direnv_env: dict[str, str], missing: list[str]) -> None:
-    """Warn when an evaluated ``.envrc`` didn't export the credential keys still needed.
+def _warn_if_envrc_lacks_keys(directory: Path, direnv_env: dict[str, str], missing: list[str], stderr: str) -> None:
+    """Warn when an evaluated ``.envrc`` didn't provide the credential keys still needed.
 
     ``direnv_env`` is non-empty only when direnv actually evaluated an approved
     ``.envrc`` (it always includes direnv's own bookkeeping vars), which lets us
-    tell "loaded but missing the keys" apart from "blocked" or "no .envrc".
+    tell "loaded but missing the keys" apart from "blocked" or "no .envrc". When
+    the file ran but the keys are unset/empty, direnv's stderr usually explains
+    why (e.g. a failed Vault lookup), so it is echoed back as the reason.
 
     Args:
         directory: Directory whose ``.envrc`` was evaluated.
         direnv_env: Variables direnv exported (empty if it didn't run/was blocked).
         missing: Required credential variables still unset after the merge.
+        stderr: direnv's stderr from evaluating the ``.envrc``.
     """
-    if direnv_env and missing:
-        typer.echo(
-            f'{directory}/.envrc was loaded via direnv but does not export: {", ".join(missing)}',
-            err=True,
-        )
+    if not (direnv_env and missing):
+        return
+    typer.echo(
+        f'{directory}/.envrc was loaded via direnv but did not provide: {", ".join(missing)}',
+        err=True,
+    )
+    diagnostic = stderr.strip()
+    if diagnostic:
+        typer.echo('direnv reported:', err=True)
+        for line in diagnostic.splitlines():
+            typer.echo(f'  {line}', err=True)
 
 
 def resolve_credentials(api_key: str | None, app_key: str | None, directory: Path) -> tuple[str | None, str | None]:
@@ -599,11 +610,11 @@ def resolve_credentials(api_key: str | None, app_key: str | None, directory: Pat
     """
     if api_key and app_key:
         return api_key, app_key
-    direnv_env = load_direnv_env(directory)
+    direnv_env, stderr = load_direnv_env(directory)
     api_key = api_key or direnv_env.get(API_KEY_ENV)
     app_key = app_key or direnv_env.get(APP_KEY_ENV)
     missing = [name for name, value in ((API_KEY_ENV, api_key), (APP_KEY_ENV, app_key)) if not value]
-    _warn_if_envrc_lacks_keys(directory, direnv_env, missing)
+    _warn_if_envrc_lacks_keys(directory, direnv_env, missing, stderr)
     return api_key, app_key
 
 
