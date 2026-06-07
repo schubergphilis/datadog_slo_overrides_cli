@@ -190,6 +190,13 @@ def test_init_config_writes_template_and_guards_overwrite(tmp_path: Path) -> Non
     assert second.exit_code != 0
 
 
+def test_version_option() -> None:
+    """--version prints the app name and version, then exits 0."""
+    result = runner.invoke(app, ['--version'])
+    assert result.exit_code == 0
+    assert 'datadog-slo-overrides' in result.output
+
+
 def test_load_direnv_env_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A successful ``direnv export json`` is parsed into the exported variables."""
     (tmp_path / '.envrc').write_text('export DD_API_KEY=k\n')
