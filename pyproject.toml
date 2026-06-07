@@ -1,6 +1,6 @@
 [project]
 name = "datadog_slo_overrides_cli"
-version = "0.0.1"
+version = "0.0.2"
 description = "CLI to set overrides idempotently for multiple SLO's"
 readme = "README.md"
 authors = [
