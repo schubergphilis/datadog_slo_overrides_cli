@@ -26,6 +26,8 @@ import sys
 import tomllib
 from dataclasses import dataclass
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -69,6 +71,7 @@ API_KEY_ENV = 'DD_API_KEY'
 APP_KEY_ENV = 'DD_APP_KEY'
 
 APP_NAME = 'datadog-slo-overrides'
+PACKAGE_NAME = 'datadog_slo_overrides_cli'
 
 
 def config_dir() -> Path:
@@ -737,6 +740,34 @@ app = typer.Typer(
     help='Set Datadog SLO corrections on multiple SLOs, selected by tag. '
     'Dry-run by default; --apply to write. See README.md.',
 )
+
+
+def _version_callback(value: bool) -> None:
+    """Print the package version and exit when ``--version`` is passed."""
+    if not value:
+        return
+    try:
+        installed = package_version(PACKAGE_NAME)
+    except PackageNotFoundError:
+        installed = 'unknown'
+    typer.echo(f'{APP_NAME} {installed}')
+    raise typer.Exit
+
+
+@app.callback()
+def _root(
+    _version: bool = typer.Option(
+        False,
+        '--version',
+        callback=_version_callback,
+        is_eager=True,
+        help='Show the version and exit.',
+    ),
+) -> None:
+    """Set Datadog SLO corrections on multiple SLOs, selected by tag.
+
+    Dry-run by default; --apply to write. See README.md.
+    """
 
 
 @app.command(no_args_is_help=True)
