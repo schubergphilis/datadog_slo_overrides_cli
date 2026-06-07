@@ -1,3 +1,9 @@
+## v0.0.3 (2026-06-07)
+
+### Features
+
+- add --version option
+
 ## v0.0.2 (2026-06-05)
 
 ### Features
