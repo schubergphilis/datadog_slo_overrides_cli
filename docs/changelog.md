@@ -1,3 +1,9 @@
+## v0.0.5 (2026-06-08)
+
+### Features
+
+- list valid choices for --strategy/--category errors
+
 ## v0.0.4 (2026-06-08)
 
 ## v0.0.3 (2026-06-07)
