@@ -39,6 +39,8 @@ uvx datadog-slo-overrides --help
 uv run datadog-slo-overrides --help
 ```
 
+Check the installed version with `datadog-slo-overrides --version`.
+
 ### Commands
 
 | Command | What it does |
