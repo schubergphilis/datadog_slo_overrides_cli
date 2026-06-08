@@ -197,6 +197,22 @@ def test_version_option() -> None:
     assert 'datadog-slo-overrides' in result.output
 
 
+def test_run_missing_choice_value_lists_choices() -> None:
+    """A choice option given without a value reports the accepted values."""
+    result = runner.invoke(app, ['run', '--strategy'])
+    assert result.exit_code != 0
+    normalized = ' '.join(result.output.split())
+    assert 'Choose from' in normalized
+    assert SKIP_IF_COVERED in normalized
+
+
+def test_run_missing_nonchoice_value_keeps_bare_message() -> None:
+    """A non-choice option given without a value keeps Click's plain message."""
+    result = runner.invoke(app, ['run', '--start'])
+    assert result.exit_code != 0
+    assert 'Choose from' not in ' '.join(result.output.split())
+
+
 def test_load_direnv_env_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A successful ``direnv export json`` is parsed into the exported variables."""
     (tmp_path / '.envrc').write_text('export DD_API_KEY=k\n')

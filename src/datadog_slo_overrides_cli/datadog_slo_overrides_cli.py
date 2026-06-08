@@ -26,13 +26,17 @@ import sys
 import tomllib
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import niquests
 import typer
+import typer.core
+from typer._click.core import Context
 
 __author__ = 'Yorick Hoorneman <yhoorneman@schubergphilis.com>'
 __docformat__ = 'google'
@@ -44,19 +48,33 @@ __maintainer__ = 'Yorick Hoorneman'
 __email__ = '<yhoorneman@schubergphilis.com>'
 __status__ = 'Development'
 
-VALID_CATEGORIES = (
-    'Scheduled Maintenance',
-    'Outside Business Hours',
-    'Deployment',
-    'Other',
-)
+
+class Category(str, Enum):
+    """Datadog correction categories accepted by ``--category``."""
+
+    SCHEDULED_MAINTENANCE = 'Scheduled Maintenance'
+    OUTSIDE_BUSINESS_HOURS = 'Outside Business Hours'
+    DEPLOYMENT = 'Deployment'
+    OTHER = 'Other'
+
+
+VALID_CATEGORIES = tuple(c.value for c in Category)
+
 
 # How an existing correction is judged to already satisfy a requested window.
 # All three are idempotent (re-running the same command never duplicates).
-SKIP_IF_COVERED = 'skip-if-covered'  # skip only if request is fully inside an existing one
-SKIP_IF_OVERLAP = 'skip-if-overlap'  # skip on any overlap (may leave the request partly uncovered)
-SKIP_IF_EXACT = 'skip-if-exact'  # skip only on an identical window (create even when overlapping)
-STRATEGIES = (SKIP_IF_COVERED, SKIP_IF_OVERLAP, SKIP_IF_EXACT)
+class Strategy(str, Enum):
+    """Skip policy accepted by ``--strategy`` (all idempotent)."""
+
+    SKIP_IF_COVERED = 'skip-if-covered'  # skip only if request is fully inside an existing one
+    SKIP_IF_OVERLAP = 'skip-if-overlap'  # skip on any overlap (may leave the request partly uncovered)
+    SKIP_IF_EXACT = 'skip-if-exact'  # skip only on an identical window (create even when overlapping)
+
+
+SKIP_IF_COVERED = Strategy.SKIP_IF_COVERED.value
+SKIP_IF_OVERLAP = Strategy.SKIP_IF_OVERLAP.value
+SKIP_IF_EXACT = Strategy.SKIP_IF_EXACT.value
+STRATEGIES = tuple(s.value for s in Strategy)
 
 # Built-in defaults for the non-secret settings a config file may override.
 DEFAULT_SITE = 'datadoghq.eu'
@@ -742,6 +760,41 @@ app = typer.Typer(
 )
 
 
+class ChoiceHintCommand(typer.core.TyperCommand):
+    """A command that lists valid values when a choice option is given without one.
+
+    Click reports a bare ``Option '--x' requires an argument.`` for a missing value,
+    raised while parsing before any option callback runs. This intercepts that error
+    and, when ``--x`` is a choice option, appends the accepted values so the message
+    is as helpful as the one shown for an *invalid* value.
+
+    Detection is by duck typing (``option_name``/``message`` on the error, ``choices``
+    on the param type) so it survives Typer vendoring its own copy of Click.
+    """
+
+    def parse_args(self, ctx: Context, args: list[str]) -> list[str]:
+        """Parse args, enriching a choice option's missing-value error with its choices."""
+        try:
+            return super().parse_args(ctx, args)
+        except Exception as exc:  # re-raised unchanged unless it's a choice option
+            err: Any = exc
+            option_name = getattr(err, 'option_name', None)
+            message = getattr(err, 'message', None)
+            if option_name and message:
+                choices = self._choices_for(ctx, option_name)
+                if choices is not None:
+                    err.message = f'{message} Choose from {", ".join(map(repr, choices))}.'
+            raise
+
+    def _choices_for(self, ctx: Context, option_name: str) -> tuple[str, ...] | None:
+        """Return the choices of the choice-typed param exposing ``option_name``, or None."""
+        for param in self.get_params(ctx):
+            if option_name in (*param.opts, *param.secondary_opts):
+                choices = getattr(param.type, 'choices', None)
+                return tuple(choices) if choices is not None else None
+        return None
+
+
 def _version_callback(value: bool) -> None:
     """Print the package version and exit when ``--version`` is passed."""
     if not value:
@@ -770,7 +823,7 @@ def _root(
     """
 
 
-@app.command(no_args_is_help=True)
+@app.command(no_args_is_help=True, cls=ChoiceHintCommand)
 def run(
     tag: list[str] = typer.Option(
         None,
@@ -792,9 +845,9 @@ def run(
         None,
         help='Correction end: ISO 8601 or epoch. Required with --apply unless --rrule.',
     ),
-    category: str = typer.Option(
+    category: Category = typer.Option(
         None,
-        help=f'Correction category, one of {VALID_CATEGORIES} (config/default: {DEFAULT_CATEGORY}).',
+        help=f'Correction category (config/default: {DEFAULT_CATEGORY}).',
     ),
     description: str = typer.Option('', help='Free-text description stored on the correction.'),
     timezone: str = typer.Option(
@@ -806,9 +859,9 @@ def run(
         help="iCal RRULE for a recurring correction (e.g. 'FREQ=DAILY;INTERVAL=1').",
     ),
     site: str = typer.Option(None, help=f'Datadog site (config/default: {DEFAULT_SITE}).'),
-    strategy: str = typer.Option(
+    strategy: Strategy = typer.Option(
         None,
-        help=f'Skip policy, one of {STRATEGIES} (config/default: {DEFAULT_STRATEGY}). All are idempotent.',
+        help=f'Skip policy (config/default: {DEFAULT_STRATEGY}). All are idempotent.',
     ),
     api_key: str = typer.Option(
         None,
@@ -842,8 +895,8 @@ def run(
         app_key=resolved_app_key,
         site=site or settings.get('site') or DEFAULT_SITE,
         timezone=timezone or settings.get('timezone') or DEFAULT_TIMEZONE,
-        category=category or settings.get('category') or DEFAULT_CATEGORY,
-        strategy=strategy or settings.get('strategy') or DEFAULT_STRATEGY,
+        category=(category.value if category else None) or settings.get('category') or DEFAULT_CATEGORY,
+        strategy=(strategy.value if strategy else None) or settings.get('strategy') or DEFAULT_STRATEGY,
         description=description,
         tags=list(tag or []),
         tags_query=tags_query,
