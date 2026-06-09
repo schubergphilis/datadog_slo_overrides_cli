@@ -692,6 +692,8 @@ def build_config(
 
     correction = None
     if apply:
+        if not description.strip():
+            sys.exit('error: --description is required with --apply')
         if start_epoch is None:
             sys.exit('error: --start is required with --apply')
         if end_epoch is None and not rrule:
@@ -849,7 +851,7 @@ def run(
         None,
         help=f'Correction category (config/default: {DEFAULT_CATEGORY}).',
     ),
-    description: str = typer.Option('', help='Free-text description stored on the correction.'),
+    description: str = typer.Option('', help='Free-text description stored on the correction. Required with --apply.'),
     timezone: str = typer.Option(
         None,
         help=f'IANA timezone for start/end (config/default: {DEFAULT_TIMEZONE}).',
