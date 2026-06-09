@@ -1,3 +1,9 @@
+## v0.0.6 (2026-06-09)
+
+### Features
+
+- require --description when using --apply
+
 ## v0.0.5 (2026-06-08)
 
 ### Features
