@@ -170,6 +170,26 @@ def test_build_config_dry_run_has_no_correction() -> None:
     assert cfg.required_tags == ['app:gitlab']
 
 
+def test_build_config_requires_description_with_apply() -> None:
+    """Applying without a (non-blank) description aborts, even with a valid window."""
+    with pytest.raises(SystemExit):
+        build_config(
+            api_key='key',
+            app_key='app',
+            site='datadoghq.eu',
+            timezone='UTC',
+            category='Scheduled Maintenance',
+            strategy=SKIP_IF_COVERED,
+            description='   ',
+            tags=['app:gitlab'],
+            tags_query=None,
+            start='2026-06-10T22:00',
+            end='2026-06-10T23:00',
+            rrule=None,
+            apply=True,
+        )
+
+
 def test_load_config_ignores_credentials(tmp_path: Path) -> None:
     """Only non-secret keys are honoured; credential-like keys are dropped."""
     config = tmp_path / 'config.toml'
