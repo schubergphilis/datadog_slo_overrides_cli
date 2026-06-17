@@ -32,9 +32,9 @@ this tool is the bulk, idempotent, scriptable way to apply them.
 ### Install
 
 ```sh
-uv tool install datadog-slo-overrides       # global `datadog-slo-overrides` command
+uv tool install datadog_slo_overrides_cli   # global `datadog-slo-overrides` command
 # or run without installing:
-uvx datadog-slo-overrides --help
+uvx --from datadog_slo_overrides_cli datadog-slo-overrides --help
 # or, from a checkout:
 uv run datadog-slo-overrides --help
 ```
