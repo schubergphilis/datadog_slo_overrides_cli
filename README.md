@@ -45,9 +45,11 @@ Check the installed version with `datadog-slo-overrides --version`.
 
 | Command | What it does |
 |---------|--------------|
-| `run` | Preview (default) or `--apply` corrections to every SLO matching the tags. |
+| `set` | Preview (default) or `--apply` corrections (overrides) to every SLO matching the tags. |
+| `list` | List SLOs matching the tags and their monitor downtime in a window, excluding downtime already covered by an override. |
 | `init-config` | Write a starter config of non-secret defaults. |
 | `init-envrc` | Write a starter `.envrc` for optional, direnv-managed credential loading. |
+| `commands list` | Print a tree of every command this CLI provides. |
 
 ### Credentials
 
@@ -79,7 +81,7 @@ actionable hint instead of failing silently. The config dir honours `XDG_CONFIG_
 
 ### Idempotency strategies
 
-`run` is idempotent: re-running the same command never creates duplicate corrections.
+`set` is idempotent: re-running the same command never creates duplicate corrections.
 `--strategy` controls when an existing correction counts as already covering your window:
 
 | `--strategy` | Skips (creates nothing) when… |
@@ -93,14 +95,14 @@ actionable hint instead of failing silently. The config dir honours `XDG_CONFIG_
 Preview which SLOs would be corrected (dry run — nothing is written):
 
 ```sh
-datadog-slo-overrides run --tag app:gitlab --tag customer:sbp \
+datadog-slo-overrides set --tag app:gitlab --tag customer:sbp \
     --start 2026-06-10T22:00 --end 2026-06-11T00:00
 ```
 
 Apply a 2-hour scheduled-maintenance correction:
 
 ```sh
-datadog-slo-overrides run --tag app:gitlab --tag customer:sbp \
+datadog-slo-overrides set --tag app:gitlab --tag customer:sbp \
     --start 2026-06-10T22:00 --end 2026-06-11T00:00 \
     --category "Scheduled Maintenance" --description "DB maintenance" \
     --apply
@@ -125,7 +127,45 @@ the built-in defaults. Credentials are **never** read from this file.
 datadog-slo-overrides init-config
 ```
 
-Run `datadog-slo-overrides run --help` for the full list of options.
+Run `datadog-slo-overrides set --help` for the full list of options.
+
+### Listing downtime
+
+`list` shows each matching SLO's **monitor downtime** (from Datadog's Downtimes API) within a
+window, and **excludes any downtime already covered by an SLO correction (override)** — so what
+remains is the downtime that is *not* yet accounted for. The window defaults to the start of the
+current month through now; set `--start`/`--end` to change it. Tag selection is optional (omit both
+`--tag` and `--tags-query` to list every SLO).
+
+```sh
+# Uncovered downtime this month, for SLOs tagged app:gitlab:
+datadog-slo-overrides list --tag app:gitlab
+
+# A specific window:
+datadog-slo-overrides list --tag app:gitlab --start 2026-07-01 --end 2026-07-15
+```
+
+```text
+Tags query : app:gitlab
+Window     : 2026-07-01 00:00 → 2026-07-17 14:30 UTC
+Matched    : 2 SLO(s)
+
+SBP - SLO monitor for the sbp gitlab Website  (fbb8a2c3…)
+  monitors: 12345
+  • 2026-07-09 10:00 → 2026-07-09 11:00  (monitor 12345)  "deploy mute"
+```
+
+Only `type: monitor` SLOs link to monitors (via `monitor_ids`), so metric and time-slice SLOs show
+no monitor downtime. Downtimes targeted by monitor **tags/scope** (rather than a specific monitor
+id) can't be mapped to an SLO from the list alone, and are reported as a note at the end.
+
+### Command tree
+
+```sh
+datadog-slo-overrides commands list
+```
+
+Prints a tree of every command the CLI provides.
 <!-- usage-end -->
 
 ## Developing further

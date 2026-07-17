@@ -220,3 +220,7 @@ cython_debug/
 
 ## Complexipy cache
 .complexipy_cache/
+
+# oh-my-claudecode operational state (keep project skills committable)
+.omc/
+!.omc/skills/
