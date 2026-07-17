@@ -213,6 +213,12 @@ extra-paths = ["_CI/lib/vendor"]
 [tool.pylint.MASTER]
 init-hook = "import sys; sys.path.append('src/'); sys.path.append('_CI/lib/vendor/')"
 
+[tool.pylint.FORMAT]
+# The CLI is intentionally a single flat module (module name == package name);
+# it holds the full command surface plus thorough Google docstrings on every
+# helper, so allow more than the 1000-line default.
+max-module-lines = 2000
+
 [tool.pylint."MESSAGES CONTROL"]
 max-line-length = 120
 disable = [

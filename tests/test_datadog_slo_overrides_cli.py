@@ -27,6 +27,7 @@ __status__ = 'Development'
 
 import json
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -35,20 +36,33 @@ from typer.testing import CliRunner
 
 from datadog_slo_overrides_cli import datadog_slo_overrides_cli as cli
 from datadog_slo_overrides_cli.datadog_slo_overrides_cli import (
+    APP_NAME,
     SKIP_IF_COVERED,
     SKIP_IF_EXACT,
     SKIP_IF_OVERLAP,
     Correction,
+    _covered_by_correction,
     _matches,
     app,
     build_config,
+    command_tree,
     config_template,
+    corrections_attrs,
+    default_window,
+    downtime_monitor_id,
+    downtime_window,
     filter_by_tags,
+    format_downtime,
+    index_downtimes_by_monitor,
     load_config,
     load_direnv_env,
     resolve_credentials,
+    resolve_list_tags,
     resolve_tag_filter,
+    resolve_window,
+    slo_monitor_ids,
     to_epoch,
+    uncovered_downtimes,
 )
 
 runner = CliRunner()
@@ -217,20 +231,172 @@ def test_version_option() -> None:
     assert 'datadog-slo-overrides' in result.output
 
 
-def test_run_missing_choice_value_lists_choices() -> None:
+def test_set_missing_choice_value_lists_choices() -> None:
     """A choice option given without a value reports the accepted values."""
-    result = runner.invoke(app, ['run', '--strategy'])
+    result = runner.invoke(app, ['set', '--strategy'])
     assert result.exit_code != 0
     normalized = ' '.join(result.output.split())
     assert 'Choose from' in normalized
     assert SKIP_IF_COVERED in normalized
 
 
-def test_run_missing_nonchoice_value_keeps_bare_message() -> None:
+def test_set_missing_nonchoice_value_keeps_bare_message() -> None:
     """A non-choice option given without a value keeps Click's plain message."""
-    result = runner.invoke(app, ['run', '--start'])
+    result = runner.invoke(app, ['set', '--start'])
     assert result.exit_code != 0
     assert 'Choose from' not in ' '.join(result.output.split())
+
+
+def test_resolve_list_tags_allows_empty_selection() -> None:
+    """The list path allows no tags (lists all SLOs), unlike the write path."""
+    assert resolve_list_tags([], None) == ('', [])
+    assert resolve_list_tags([], 'app:gitlab AND env:prod') == ('app:gitlab AND env:prod', [])
+    assert resolve_list_tags(['app:gitlab', 'customer:sbp'], None) == ('app:gitlab', ['app:gitlab', 'customer:sbp'])
+
+
+def test_default_window_is_month_start_to_now() -> None:
+    """The default window runs from midnight on the 1st of the month to now."""
+    start, end = default_window(ZoneInfo('UTC'))
+    start_dt = datetime.fromtimestamp(start, ZoneInfo('UTC'))
+    assert (start_dt.day, start_dt.hour, start_dt.minute, start_dt.second) == (1, 0, 0, 0)
+    assert start <= end
+
+
+def test_resolve_window_defaults_and_overrides() -> None:
+    """An unset bound defaults; an explicit bound is parsed via to_epoch."""
+    tz = ZoneInfo('UTC')
+    default_start, _ = resolve_window(None, None, tz)
+    month_start = datetime.fromtimestamp(default_start, tz)
+    assert month_start.day == 1
+    explicit_start, explicit_end = resolve_window('2026-07-05T00:00', '1777034190', tz)
+    assert explicit_start == to_epoch('2026-07-05T00:00', tz)
+    assert explicit_end == 1777034190
+
+
+def test_slo_monitor_ids_only_for_monitor_slos() -> None:
+    """Monitor IDs come from monitor_ids; metric/time_slice SLOs have none."""
+    assert slo_monitor_ids({'type': 'monitor', 'monitor_ids': [12345, 67890]}) == [12345, 67890]
+    assert slo_monitor_ids({'type': 'metric'}) == []
+    assert slo_monitor_ids({'type': 'monitor'}) == []
+
+
+def test_downtime_monitor_id_distinguishes_id_from_tag_scoped() -> None:
+    """A monitor_id target yields its id; a monitor_tags target yields None."""
+    assert downtime_monitor_id({'monitor_identifier': {'monitor_id': 12345}}) == 12345
+    assert downtime_monitor_id({'monitor_identifier': {'monitor_tags': ['team:x']}}) is None
+    assert downtime_monitor_id({}) is None
+
+
+def test_downtime_window_one_time_and_recurring() -> None:
+    """One-time downtimes read schedule.start/end; recurring read current_downtime."""
+    one_time = downtime_window({'schedule': {'start': '2026-07-09T10:00:00+00:00', 'end': '2026-07-09T11:00:00+00:00'}})
+    assert one_time is not None
+    start, end = one_time
+    assert end is not None
+    assert end - start == 3600  # one hour
+    # Open-ended one-time downtime.
+    open_ended = downtime_window({'schedule': {'start': '2026-07-09T10:00:00+00:00', 'end': None}})
+    assert open_ended is not None
+    assert open_ended[1] is None
+    # Recurring downtime uses the current occurrence.
+    recurring = downtime_window(
+        {
+            'schedule': {
+                'recurrences': [{'rrule': 'FREQ=DAILY', 'start': '2026-07-09T10:00'}],
+                'current_downtime': {'start': '2026-07-09T10:00:00+00:00', 'end': '2026-07-09T10:30:00+00:00'},
+            }
+        }
+    )
+    assert recurring is not None
+    # A downtime with no resolvable start returns None.
+    assert downtime_window({'schedule': {}}) is None
+
+
+def test_index_downtimes_by_monitor_counts_tag_scoped() -> None:
+    """Downtimes are grouped by monitor_id; tag-scoped ones are counted, not indexed."""
+    downtimes = [
+        {'attributes': {'monitor_identifier': {'monitor_id': 1}, 'schedule': {'start': '2026-07-09T10:00:00+00:00'}}},
+        {'attributes': {'monitor_identifier': {'monitor_id': 1}, 'schedule': {'start': '2026-07-10T10:00:00+00:00'}}},
+        {'attributes': {'monitor_identifier': {'monitor_tags': ['team:x']}, 'schedule': {}}},
+    ]
+    index, tag_scoped = index_downtimes_by_monitor(downtimes)
+    assert len(index[1]) == 2
+    assert tag_scoped == 1
+
+
+def test_covered_by_correction_only_fully_contained() -> None:
+    """A downtime is overridden only when a non-recurring correction fully contains it."""
+    corrections = [{'start': 100, 'end': 200}]
+    assert _covered_by_correction(120, 180, corrections) is True
+    assert _covered_by_correction(120, 250, corrections) is False  # extends past the correction
+    # Recurring corrections never count as coverage.
+    assert _covered_by_correction(120, 180, [{'start': 100, 'end': 200, 'rrule': 'FREQ=DAILY'}]) is False
+    # Open-ended correction covers an open-ended downtime that starts within it.
+    assert _covered_by_correction(150, None, [{'start': 100, 'end': None}]) is True
+
+
+def test_corrections_attrs_extracts_payloads() -> None:
+    """corrections_attrs reduces correction objects to their attributes dicts."""
+    assert corrections_attrs([{'id': 'a', 'attributes': {'start': 1}}]) == [{'start': 1}]
+
+
+def test_uncovered_downtimes_filters_window_and_overrides() -> None:
+    """Only in-window downtimes that no correction covers survive."""
+    def _downtime(start: str, end: str) -> dict:
+        return {'monitor_identifier': {'monitor_id': 1}, 'schedule': {'start': start, 'end': end}}
+
+    downtimes = [
+        _downtime('2026-07-09T10:00:00+00:00', '2026-07-09T11:00:00+00:00'),  # in window, not covered -> kept
+        _downtime('2026-07-05T22:00:00+00:00', '2026-07-05T23:00:00+00:00'),  # covered by correction -> dropped
+        _downtime('2026-08-01T10:00:00+00:00', '2026-08-01T11:00:00+00:00'),  # outside window -> dropped
+    ]
+    window_start = to_epoch('2026-07-01T00:00', ZoneInfo('UTC'))
+    window_end = to_epoch('2026-07-31T23:59', ZoneInfo('UTC'))
+    covering = {
+        'start': to_epoch('2026-07-05T21:00', ZoneInfo('UTC')),
+        'end': to_epoch('2026-07-06T00:00', ZoneInfo('UTC')),
+    }
+    kept = uncovered_downtimes(downtimes, [covering], window_start, window_end)
+    assert len(kept) == 1
+    assert kept[0][1] == to_epoch('2026-07-09T10:00', ZoneInfo('UTC'))
+
+
+def test_format_downtime_renders_window_and_target() -> None:
+    """A downtime line shows its window, the target monitor, and any message."""
+    tz = ZoneInfo('UTC')
+    start = to_epoch('2026-07-09T10:00', tz)
+    end = to_epoch('2026-07-09T11:00', tz)
+    line = format_downtime({'monitor_identifier': {'monitor_id': 42}, 'message': 'deploy'}, start, end, tz)
+    assert 'monitor 42' in line
+    assert '→' in line
+    assert '"deploy"' in line
+    open_ended = format_downtime({'monitor_identifier': {'monitor_id': 42}}, start, None, tz)
+    assert 'open-ended' in open_ended
+
+
+def test_command_tree_lists_all_commands() -> None:
+    """The command tree names every top-level command and the nested commands.list."""
+    tree = command_tree(APP_NAME)
+    assert tree.splitlines()[0] == APP_NAME
+    for name in ('set', 'list', 'init-config', 'init-envrc', 'commands'):
+        assert name in tree
+    # commands.list appears nested under commands with a branch connector.
+    assert '└── list' in tree or '├── list' in tree
+
+
+def test_commands_list_command_prints_tree() -> None:
+    """`commands list` prints the tree rooted at the app name."""
+    result = runner.invoke(app, ['commands', 'list'])
+    assert result.exit_code == 0
+    assert APP_NAME in result.output
+    assert 'set' in result.output
+    assert 'commands' in result.output
+
+
+def test_list_requires_credentials() -> None:
+    """`list` aborts when no credentials are resolvable."""
+    result = runner.invoke(app, ['list', '--tag', 'app:gitlab', '--config', '/nonexistent/config.toml'], env={})
+    assert result.exit_code != 0
 
 
 def test_load_direnv_env_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
