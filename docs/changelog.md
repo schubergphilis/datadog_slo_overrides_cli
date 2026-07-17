@@ -1,3 +1,9 @@
+## v0.1.0 (2026-07-17)
+
+### Features
+
+- add list command for SLO downtime and a commands tree
+
 ## v0.0.7 (2026-06-17)
 
 ## v0.0.6 (2026-06-09)
