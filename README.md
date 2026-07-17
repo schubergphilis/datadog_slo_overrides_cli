@@ -66,7 +66,7 @@ rather than the tool executing shell itself):
 
 ```sh
 datadog-slo-overrides init-envrc                 # writes ~/.config/datadog-slo-overrides/.envrc
-# edit it to `export DD_API_KEY=...` / `export DD_APP_KEY=...` (e.g. from Vault), then:
+# it pre-fills DD_API_KEY / DD_APP_KEY exports; review and adjust the source if needed, then:
 direnv allow ~/.config/datadog-slo-overrides
 ```
 
