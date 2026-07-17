@@ -23,6 +23,11 @@
 # GHSA-xxxx-yyyy-zzzz
 # PYSEC-2025-0001
 
-# pip 26.1.1 -> fixed in 26.1.2, but selection is blocked by [tool.uv] exclude-newer.
-# Expires so the audit re-checks once 26.1.2 is selectable via `uv lock --upgrade-package pip`.
-PYSEC-2026-196::2026-06-19
+# Both fixes exist on PyPI but are held back by [tool.uv] exclude-newer = "1 week"
+# (a release isn't selectable until it ages past the window). Time-boxed so the audit
+# re-checks once they're selectable via `uv lock --upgrade-package <pkg>`.
+#
+# pip 26.1.1 -> fixed in 26.1.2 (the installer; not shipped in the wheel).
+PYSEC-2026-196::2026-08-17
+# msgpack 1.1.2 (transitive via niquests) -> fixed in 1.2.1.
+GHSA-6v7p-g79w-8964::2026-08-17
