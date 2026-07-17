@@ -1,3 +1,9 @@
+## v0.1.1 (2026-07-17)
+
+### Bug Fixes
+
+- init-envrc pre-fills DD_API_KEY/DD_APP_KEY from secret/audit
+
 ## v0.1.0 (2026-07-17)
 
 ### Features
