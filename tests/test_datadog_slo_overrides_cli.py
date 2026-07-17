@@ -342,6 +342,7 @@ def test_corrections_attrs_extracts_payloads() -> None:
 
 def test_uncovered_downtimes_filters_window_and_overrides() -> None:
     """Only in-window downtimes that no correction covers survive."""
+
     def _downtime(start: str, end: str) -> dict:
         return {'monitor_identifier': {'monitor_id': 1}, 'schedule': {'start': start, 'end': end}}
 
