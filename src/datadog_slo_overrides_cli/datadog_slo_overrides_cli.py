@@ -963,9 +963,9 @@ def envrc_template() -> str:
         '# Read only as a fallback: an explicit --api-key/--app-key or an already-set\n'
         '# DD_API_KEY / DD_APP_KEY in your shell always take precedence.\n'
         '\n'
-        '# Example — fetch from Vault (needs a valid token; run `vault login` first):\n'
-        '# export DD_API_KEY="$(vault kv get -field=value secret/datadog/api-key)"\n'
-        '# export DD_APP_KEY="$(vault kv get -field=value secret/datadog/app-key)"\n'
+        '# Fetch from Vault (needs a valid token; run `vault login` first):\n'
+        'export DD_API_KEY="$(vault kv get -field=value secret/audit/datadog-api-key)"\n'
+        'export DD_APP_KEY="$(vault kv get -field=value secret/audit/datadog-application-key)"\n'
     )
 
 
@@ -1496,7 +1496,7 @@ def init_envrc(
     directory.mkdir(parents=True, exist_ok=True)
     envrc.write_text(envrc_template())
     typer.echo(f'Wrote {envrc}')
-    typer.echo(f'Next: edit it to export DD_API_KEY / DD_APP_KEY, then run: direnv allow {directory}')
+    typer.echo(f'Next: review it and adjust the credential source if needed, then run: direnv allow {directory}')
 
 
 def main() -> None:
