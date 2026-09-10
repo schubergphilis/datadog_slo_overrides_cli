@@ -46,7 +46,7 @@ Check the installed version with `datadog-slo-overrides --version`.
 | Command | What it does |
 |---------|--------------|
 | `set` | Preview (default) or `--apply` corrections (overrides) to every SLO matching the tags. |
-| `list` | List SLOs matching the tags and their monitor downtime in a window, excluding downtime already covered by an override. |
+| `list` | Report each matching SLO's monitor downtime in a window, net of the overrides that excuse it, with uptime percentages. |
 | `init-config` | Write a starter config of non-secret defaults. |
 | `init-envrc` | Write a starter `.envrc` for optional, direnv-managed credential loading. |
 | `commands list` | Print a tree of every command this CLI provides. |
@@ -129,35 +129,68 @@ datadog-slo-overrides init-config
 
 Run `datadog-slo-overrides set --help` for the full list of options.
 
-### Listing downtime
+### Reporting downtime
 
-`list` shows each matching SLO's **monitor downtime** (from Datadog's Downtimes API) within a
-window, and **excludes any downtime already covered by an SLO correction (override)** — so what
-remains is the downtime that is *not* yet accounted for. The window defaults to the start of the
-current month through now; set `--start`/`--end` to change it. Tag selection is optional (omit both
-`--tag` and `--tags-query` to list every SLO).
+`list` reports, for each matching SLO, the **downtime that still counts against it**. Each backing
+monitor's alerting periods are reconstructed from its Datadog alert/recovery events, the SLO is
+treated as impaired whenever **any** of its monitors is alerting, and the windows of every
+correction (override) on that SLO — including the occurrences of a recurring one — are subtracted.
+What remains is reported with its uptime percentage for the window. The window defaults to the
+start of the current month through now; set `--start`/`--end` to change it. Tag selection is
+optional (omit both `--tag` and `--tags-query` to report every SLO).
 
 ```sh
-# Uncovered downtime this month, for SLOs tagged app:gitlab:
+# Net downtime this month, for SLOs tagged app:gitlab:
 datadog-slo-overrides list --tag app:gitlab
 
-# A specific window:
-datadog-slo-overrides list --tag app:gitlab --start 2026-07-01 --end 2026-07-15
+# A specific window, showing only the SLOs that still have downtime left:
+datadog-slo-overrides list --start 2026-08-01T00:00 --end 2026-09-01T00:00 --only-downtime
 ```
 
 ```text
 Tags query : app:gitlab
-Window     : 2026-07-01 00:00 → 2026-07-17 14:30 UTC
+Window     : 2026-08-01 00:00:00 → 2026-08-31 00:00:00 UTC
+Rule       : Datadog monitor alert periods (union: any backing monitor alerting), minus SLO corrections — for a multi-monitor SLO this need not equal Datadog's own SLI
 Matched    : 2 SLO(s)
+Events     : 4 fetched, 4 usable transition(s)
 
 SBP - SLO monitor for the sbp gitlab Website  (fbb8a2c3…)
   monitors: 12345
-  • 2026-07-09 10:00 → 2026-07-09 11:00  (monitor 12345)  "deploy mute"
+  raw 2h 4m 58s - excluded 1h = net 1h 4m 58s
+  uptime 99.850% (99.711% before corrections)
+  • 2026-08-10 03:00:00 → 2026-08-10 04:00:00  (1h)
+  • 2026-08-24 17:47:00 → 2026-08-24 17:51:58  (4m 58s)
 ```
 
-Only `type: monitor` SLOs link to monitors (via `monitor_ids`), so metric and time-slice SLOs show
-no monitor downtime. Downtimes targeted by monitor **tags/scope** (rather than a specific monitor
-id) can't be mapped to an SLO from the list alone, and are reported as a note at the end.
+Instants are rendered to the second, because monitor transitions land on arbitrary seconds. A
+correction that only partly overlaps an outage trims it rather than excusing it whole, and an SLO
+whose downtime was **entirely** excused says so explicitly — it is not silently identical to one
+that never failed. `--only-downtime` hides the clean SLOs and reports how many were hidden.
+
+#### How to read it, and what it cannot tell you
+
+The percentage answers *"was the service impaired"*. It is **not** a reproduction of the figure on
+the SLO's own Datadog page: for an SLO backed by several monitors this unions their bad time, where
+Datadog aggregates its SLI differently. Treat a disagreement there as expected, not as a bug.
+
+Because a silently empty result is indistinguishable from a flawless month, the report states its
+own evidence and refuses to certify uptime it cannot back:
+
+- The `Events` line reports how many events were fetched and how many became usable transitions. If
+  events came back but **none** were readable as state changes, the command says so on stderr and
+  **exits 1** rather than printing a page of 100%s.
+- A `Monitors` line appears when some backing monitors produced no transitions at all in the window.
+  Those read as fully up *by absence of evidence* — worth knowing if a monitor has been red longer
+  than the week of history the report looks back over.
+- Events are fetched in day-sized slices, and a slice that comes back at the API's page cap is
+  halved and retried; if one still saturates, a warning says the report understates downtime.
+- Ignored events are counted by reason (no monitor, no timestamp, unrecognised transition,
+  out-of-range timestamp) and reported on stderr.
+
+Other limits worth knowing: only `type: monitor` SLOs link to monitors (via `monitor_ids`), so
+metric and time-slice SLOs show no monitor downtime; a monitor in WARN is not counted as down; a
+future `--end` is pulled back to now so unelapsed time cannot pad the percentage; and a recurring
+correction with no `duration` is skipped with a warning rather than having one inferred.
 
 ### Command tree
 

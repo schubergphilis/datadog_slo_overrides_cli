@@ -386,6 +386,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "niquests" },
+    { name = "python-dateutil" },
     { name = "typer" },
 ]
 
@@ -452,6 +453,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "niquests", specifier = ">=3.7" },
+    { name = "python-dateutil", specifier = ">=2.9" },
     { name = "typer", specifier = ">=0.12" },
 ]
 
