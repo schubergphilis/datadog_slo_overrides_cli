@@ -2099,7 +2099,6 @@ def execute(cfg: RunConfig) -> int:
 
 
 app = typer.Typer(
-    add_completion=False,
     no_args_is_help=True,
     help='Set Datadog SLO corrections on multiple SLOs, selected by tag. '
     'Dry-run by default; --apply to write. See README.md.',
@@ -2371,7 +2370,6 @@ def command_tree(root_name: str) -> str:
 
 
 commands_app = typer.Typer(
-    add_completion=False,
     no_args_is_help=True,
     help='Introspect the CLI itself.',
 )
