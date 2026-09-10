@@ -9,6 +9,10 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "niquests>=3.7",
+    # Expands the RRULE of a recurring Datadog SLO correction into the concrete
+    # occurrences inside a report window, so recurring corrections are subtracted
+    # from the observed downtime instead of being silently ignored.
+    "python-dateutil>=2.9",
     "typer>=0.12",
 ]
 license = "Apache-2.0"
@@ -216,8 +220,11 @@ init-hook = "import sys; sys.path.append('src/'); sys.path.append('_CI/lib/vendo
 [tool.pylint.FORMAT]
 # The CLI is intentionally a single flat module (module name == package name);
 # it holds the full command surface plus thorough Google docstrings on every
-# helper, so allow more than the 1000-line default.
-max-module-lines = 2000
+# helper, so allow more than the 1000-line default. Raised again for the
+# net-downtime report: interval algebra, recurrence expansion and the monitor
+# transition state machine, each with the commentary explaining why they work
+# the way they do.
+max-module-lines = 2500
 
 [tool.pylint."MESSAGES CONTROL"]
 max-line-length = 120
