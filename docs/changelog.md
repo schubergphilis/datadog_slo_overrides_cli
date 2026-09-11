@@ -1,3 +1,18 @@
+## v0.2.0 (2026-09-11)
+
+### BREAKING CHANGE
+
+- `list` reports observed monitor downtime net of corrections instead of uncovered Datadog downtime objects. Its output format and data source both change, and it now exits 1 when no monitor state change can be read. Adds a python-dateutil dependency.
+
+### Bug Fixes
+
+- upgrade msgpack, pip and pymdown-extensions past known vulnerabilities
+- enable typer shell completion
+
+### Features
+
+- report monitor downtime net of SLO corrections
+
 ## v0.1.1 (2026-07-17)
 
 ### Bug Fixes
