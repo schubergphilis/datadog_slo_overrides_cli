@@ -425,6 +425,11 @@ def test_classify_transition_reads_transition_then_alert_type() -> None:
     assert classify_transition({'alert_transition': 'Muted', 'alert_type': 'error'}) is None
     assert classify_transition({'alert_type': 'error'}) is True
     assert classify_transition({'alert_type': 'success'}) is False
+    # A Synthetics recovery carries no alert_transition and spells its
+    # alert_type `ok`; not reading it as a recovery leaves the outage open to
+    # the end of the window.
+    assert classify_transition({'alert_type': 'ok'}) is False
+    assert classify_transition({'alert_type': 'OK'}) is False
     assert classify_transition({}) is None
 
 
@@ -798,6 +803,31 @@ def _fake_datadog_session(
             raise AssertionError(unexpected)
 
     return cast('niquests.Session', _Session())
+
+
+def test_report_closes_an_outage_recovered_with_an_ok_alert_type(capsys: pytest.CaptureFixture) -> None:
+    """An `ok` recovery ends the outage instead of running it to the window end.
+
+    Synthetics monitors emit no `alert_transition` and recover with
+    `alert_type: ok`. Treating that as unreadable left the outage open, turning
+    a minutes-long blip into days of reported downtime.
+    """
+    tz = ZoneInfo('UTC')
+    window = (to_epoch('2026-09-15T00:00', tz), to_epoch('2026-09-17T00:00', tz))
+    outage_start = to_epoch('2026-09-15T11:57:11', tz)
+    outage_end = to_epoch('2026-09-15T12:01:41', tz)
+    events = [
+        {'monitor_id': 1, 'date_happened': outage_start, 'alert_type': 'error'},
+        {'monitor_id': 1, 'date_happened': outage_end, 'alert_type': 'ok'},
+    ]
+    slos = [{'id': 'slo1', 'name': 'vault website', 'type': 'monitor', 'monitor_ids': [1], 'tags': []}]
+    session = _fake_datadog_session(events, {}, slos)
+
+    code = report_net_downtime(session, 'https://api.example', '', [], window, tz, 'UTC')
+    out = capsys.readouterr().out
+    assert code == 0
+    assert '2026-09-15 11:57:11 → 2026-09-15 12:01:41  (4m 30s)' in out
+    assert 'unrecognised transition' not in out
 
 
 def test_report_net_downtime_pages_past_the_first_page_of_corrections(capsys: pytest.CaptureFixture) -> None:
