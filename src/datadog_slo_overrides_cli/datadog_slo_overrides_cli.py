@@ -104,6 +104,14 @@ DEFAULT_CONFIG_PATH = config_dir() / 'config.toml'
 
 HTTP_TIMEOUT = 30
 PAGE_SIZE = 100
+# /api/v1/slo/{id}/corrections pages differently from the rest of the v1 API: it
+# ignores `limit`/`offset` entirely (silently serving the 10 most recent
+# corrections), takes JSON:API-style `page[limit]`/`page[offset]` instead, and
+# caps a page at 25 however large a limit is asked for. Paging it with the
+# wrong parameter names is invisible — the short page reads as "last page" —
+# so an SLO with more corrections than a page silently loses the rest, and the
+# report then charges already-excused downtime against it.
+CORRECTIONS_PAGE_SIZE = 25
 
 # Statuses worth turning into advice rather than a bare code.
 HTTP_AUTH_FAILURES = frozenset({401, 403})
@@ -1656,14 +1664,14 @@ def get_corrections(session: niquests.Session, base: str, slo_id: str) -> list[d
             get_json(
                 session,
                 f'{base}/api/v1/slo/{slo_id}/corrections',
-                {'limit': str(PAGE_SIZE), 'offset': str(offset)},
+                {'page[limit]': str(CORRECTIONS_PAGE_SIZE), 'page[offset]': str(offset)},
             ).get('data')
             or []
         )
         corrections.extend(page)
-        if len(page) < PAGE_SIZE:
+        if len(page) < CORRECTIONS_PAGE_SIZE:
             break
-        offset += PAGE_SIZE
+        offset += CORRECTIONS_PAGE_SIZE
     return corrections
 
 

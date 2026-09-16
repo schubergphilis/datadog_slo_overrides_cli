@@ -39,6 +39,7 @@ from typer.testing import CliRunner
 from datadog_slo_overrides_cli import datadog_slo_overrides_cli as cli
 from datadog_slo_overrides_cli.datadog_slo_overrides_cli import (
     APP_NAME,
+    CORRECTIONS_PAGE_SIZE,
     SECONDS_PER_DAY,
     SECONDS_PER_HOUR,
     SKIP_IF_COVERED,
@@ -87,6 +88,8 @@ from datadog_slo_overrides_cli.datadog_slo_overrides_cli import (
 runner = CliRunner()
 
 DST_OFFSET_SECONDS = 7200
+# What the corrections endpoint serves when no `page[limit]` is given.
+_CORRECTIONS_DEFAULT_PAGE = 10
 
 
 def _completed(stdout: str = '', stderr: str = '', returncode: int = 0) -> subprocess.CompletedProcess[str]:
@@ -784,12 +787,45 @@ def _fake_datadog_session(
                 return _Resp({'events': [e for e in events if start <= e.get('date_happened', start) < end]})
             if '/corrections' in url:
                 slo_id = url.split('/slo/')[1].split('/')[0]
-                found = corrections.get(slo_id, []) if params.get('offset') == '0' else []
-                return _Resp({'data': found})
+                # Mirrors the real endpoint: `limit`/`offset` are ignored, only
+                # `page[limit]`/`page[offset]` page it, and a page never exceeds
+                # 25 however large a limit is asked for.
+                offset = int(params.get('page[offset]', 0))
+                limit = min(int(params.get('page[limit]', _CORRECTIONS_DEFAULT_PAGE)), CORRECTIONS_PAGE_SIZE)
+                found = corrections.get(slo_id, [])
+                return _Resp({'data': found[offset : offset + limit]})
             unexpected = f'unexpected URL {url}'
             raise AssertionError(unexpected)
 
     return cast('niquests.Session', _Session())
+
+
+def test_report_net_downtime_pages_past_the_first_page_of_corrections(capsys: pytest.CaptureFixture) -> None:
+    """Corrections beyond the endpoint's first page still excuse their downtime.
+
+    The endpoint serves only 10 corrections unless paged with `page[limit]` /
+    `page[offset]`, so an SLO with more than a page of them used to have the
+    rest silently dropped and its excused downtime charged against it.
+    """
+    tz = ZoneInfo('UTC')
+    window = (to_epoch('2026-08-01T00:00', tz), to_epoch('2026-09-01T00:00', tz))
+    # One outage a day, each fully excused by its own correction. With 30 of
+    # them, no single page of the endpoint holds them all.
+    outages = [to_epoch('2026-08-01T00:00', tz) + day * SECONDS_PER_DAY + SECONDS_PER_HOUR for day in range(30)]
+    events = []
+    for start in outages:
+        events.append({'monitor_id': 1, 'date_happened': start, 'alert_transition': 'Triggered'})
+        events.append({'monitor_id': 1, 'date_happened': start + SECONDS_PER_HOUR, 'alert_transition': 'Recovered'})
+    slos = [{'id': 'slo1', 'name': 'gitlab web', 'type': 'monitor', 'monitor_ids': [1], 'tags': []}]
+    corrections = {'slo1': [{'attributes': {'start': s, 'end': s + SECONDS_PER_HOUR}} for s in outages]}
+    assert len(corrections['slo1']) > CORRECTIONS_PAGE_SIZE
+    session = _fake_datadog_session(events, corrections, slos)
+
+    code = report_net_downtime(session, 'https://api.example', '', [], window, tz, 'UTC')
+    out = capsys.readouterr().out
+    assert code == 0
+    assert 'all observed downtime excluded by corrections' in out
+    assert 'raw 1d 6h - excluded 1d 6h = net 0s' in out
 
 
 def test_report_net_downtime_end_to_end(capsys: pytest.CaptureFixture) -> None:
