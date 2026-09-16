@@ -1,3 +1,9 @@
+## v0.2.2 (2026-09-16)
+
+### Bug Fixes
+
+- treat an `ok` alert_type as a recovery
+
 ## v0.2.1 (2026-09-16)
 
 ### Bug Fixes
