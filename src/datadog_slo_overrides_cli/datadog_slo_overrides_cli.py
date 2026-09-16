@@ -215,8 +215,13 @@ RECOVERY_TRANSITIONS = frozenset(
 # present. ``warning`` is deliberately absent: a monitor in WARN is not a breach
 # of a monitor-based SLO, and counting it would over-report downtime.
 FAILURE_ALERT_TYPES = frozenset({'error'})
-# ``alert_type`` values meaning "no longer failing".
-RECOVERY_ALERT_TYPES = frozenset({'success', 'recovery'})
+# ``alert_type`` values meaning "no longer failing". Both ``success`` and ``ok``
+# are emitted in practice — a Synthetics monitor recovers with ``ok`` where a
+# metric monitor uses ``success`` — and neither carries an ``alert_transition``,
+# so this set is the only thing that closes those outages. Missing a spelling
+# here leaves the outage open to the end of the window, which is why the report
+# would otherwise charge a four-minute blip as days of downtime.
+RECOVERY_ALERT_TYPES = frozenset({'success', 'ok', 'recovery'})
 
 
 @dataclass
