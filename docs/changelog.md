@@ -1,3 +1,9 @@
+## v0.2.1 (2026-09-16)
+
+### Bug Fixes
+
+- page SLO corrections with page[limit]/page[offset]
+
 ## v0.2.0 (2026-09-11)
 
 ### BREAKING CHANGE
