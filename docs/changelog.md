@@ -1,3 +1,9 @@
+## v0.2.3 (2026-09-22)
+
+### Bug Fixes
+
+- retry Datadog server errors instead of aborting the run
+
 ## v0.2.2 (2026-09-16)
 
 ### Bug Fixes
