@@ -23,6 +23,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import tomllib
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -116,6 +117,17 @@ CORRECTIONS_PAGE_SIZE = 25
 # Statuses worth turning into advice rather than a bare code.
 HTTP_AUTH_FAILURES = frozenset({401, 403})
 HTTP_RATE_LIMITED = 429
+HTTP_SERVER_ERROR = 500
+
+# Datadog's corrections endpoint faults intermittently on its own side, serving
+# `Internal Server Error: <class 'dogweb.model.slo_correction.SloCorrection'>
+# returned a result with an exception set` for roughly one call in twenty
+# (measured 2026-09-22 against an unchanging SLO: 19 of 20 identical requests
+# succeeded). A report issues a call per SLO, so over a few dozen SLOs an
+# unretried run is more likely than not to die on a fault that a second attempt
+# would have cleared. Three attempts put that at about one run in a thousand.
+HTTP_RETRY_ATTEMPTS = 3
+HTTP_RETRY_BACKOFF = 0.5
 
 SECONDS_PER_MINUTE = 60
 SECONDS_PER_HOUR = 3600
@@ -458,14 +470,85 @@ def resolve_list_tags(tags: list[str], tags_query: str | None) -> tuple[str, lis
     return '', []
 
 
+def retryable_status(status: int | None) -> bool:
+    """Return whether a failed status is worth a second attempt.
+
+    Args:
+        status: The response's HTTP status code, or None when it carries none.
+
+    Returns:
+        True for a server-side fault or a rate limit, which are transient.
+    """
+    return status is not None and (status >= HTTP_SERVER_ERROR or status == HTTP_RATE_LIMITED)
+
+
+def error_detail(resp: niquests.Response) -> str:
+    """Return Datadog's own error text for a failed response, as a trailing clause.
+
+    Datadog names the cause in the body's ``errors`` array; without it a failure
+    reads as a bare status code and says nothing about whether the request or
+    the service is at fault.
+
+    Args:
+        resp: The failed response.
+
+    Returns:
+        The joined error text prefixed with ``: ``, or an empty string when the
+        body carries none.
+    """
+    try:
+        body = resp.json()
+    except ValueError:
+        return ''
+    errors = body.get('errors') if isinstance(body, dict) else None
+    if not errors:
+        return ''
+    text = '; '.join(str(error) for error in errors) if isinstance(errors, list) else str(errors)
+    return f': {text}'
+
+
+def get_retrying(session: niquests.Session, url: str, params: dict[str, str] | None) -> niquests.Response:
+    """GET a URL, retrying transient failures with an exponential backoff.
+
+    A transport error or a retryable status is slept on and tried again; any
+    other outcome returns at once. The final attempt is made outside the loop so
+    its response — or its exception — reaches the caller unmodified.
+
+    Args:
+        session: Authenticated Datadog session.
+        url: The full endpoint URL.
+        params: Query parameters, if any.
+
+    Returns:
+        The last response received.
+
+    Raises:
+        niquests.RequestException: If the final attempt fails at the transport level.
+    """
+    delay = HTTP_RETRY_BACKOFF
+    for _ in range(HTTP_RETRY_ATTEMPTS - 1):
+        try:
+            resp = session.get(url, params=params, timeout=HTTP_TIMEOUT)
+        except niquests.RequestException:
+            pass
+        else:
+            if resp.ok or not retryable_status(resp.status_code):
+                return resp
+        time.sleep(delay)
+        delay *= 2
+    return session.get(url, params=params, timeout=HTTP_TIMEOUT)
+
+
 def get_json(session: niquests.Session, url: str, params: dict[str, str] | None = None) -> dict:
     """GET a Datadog endpoint and return its decoded JSON body.
 
     The read paths issue a request per SLO and per event slice, so a report over
     a large account makes hundreds of calls and a transport error or a 429 part
-    way through is an expected outcome rather than a surprise. Those exit with a
-    message naming the endpoint instead of a traceback; ``raise_for_status`` is
-    avoided because its message embeds the full URL and query string.
+    way through is an expected outcome rather than a surprise. Transient
+    failures are retried; one that outlives its retries exits with a message
+    naming the endpoint and quoting Datadog's own error text, instead of a
+    traceback. ``raise_for_status`` is avoided because its message embeds the
+    full URL and query string.
 
     Args:
         session: Authenticated Datadog session.
@@ -477,7 +560,7 @@ def get_json(session: niquests.Session, url: str, params: dict[str, str] | None 
     """
     endpoint = url.partition('/api/')[2] or url
     try:
-        resp = session.get(url, params=params, timeout=HTTP_TIMEOUT)
+        resp = get_retrying(session, url, params)
     except niquests.RequestException as exc:
         sys.exit(f'error: could not reach Datadog /api/{endpoint}: {type(exc).__name__}')
     if not resp.ok:
@@ -486,7 +569,9 @@ def get_json(session: niquests.Session, url: str, params: dict[str, str] | None 
             hint = f'; check {API_KEY_ENV} / {APP_KEY_ENV} are valid and the app key has read scope'
         elif resp.status_code == HTTP_RATE_LIMITED:
             hint = '; the account is rate limited, retry with a shorter window'
-        sys.exit(f'error: Datadog /api/{endpoint} returned HTTP {resp.status_code}{hint}')
+        elif retryable_status(resp.status_code):
+            hint = f" after {HTTP_RETRY_ATTEMPTS} attempts; this is a fault on Datadog's side"
+        sys.exit(f'error: Datadog /api/{endpoint} returned HTTP {resp.status_code}{hint}{error_detail(resp)}')
     try:
         body = resp.json()
     except ValueError:

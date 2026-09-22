@@ -223,8 +223,9 @@ init-hook = "import sys; sys.path.append('src/'); sys.path.append('_CI/lib/vendo
 # helper, so allow more than the 1000-line default. Raised again for the
 # net-downtime report: interval algebra, recurrence expansion and the monitor
 # transition state machine, each with the commentary explaining why they work
-# the way they do.
-max-module-lines = 2500
+# the way they do. Raised once more for the HTTP retry layer, which carries the
+# measured evidence for Datadog's intermittent server-side fault.
+max-module-lines = 2600
 
 [tool.pylint."MESSAGES CONTROL"]
 max-line-length = 120
