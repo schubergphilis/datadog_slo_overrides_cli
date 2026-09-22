@@ -742,6 +742,10 @@ def test_get_json_turns_an_auth_failure_into_advice() -> None:
         ok = False
         status_code = 403
 
+        def json(self) -> dict:
+            """Return a body without an errors array."""
+            return {}
+
     class _Session:
         def get(self, url: str, params: dict, timeout: int) -> _Resp:  # noqa: ARG002 - signature parity
             """Return a forbidden response."""
@@ -753,6 +757,106 @@ def test_get_json_turns_an_auth_failure_into_advice() -> None:
     assert 'v1/events' in message
     assert 'DD_APP_KEY' in message
     assert 'sources=alert' not in message
+
+
+def test_get_json_does_not_retry_an_auth_failure() -> None:
+    """A 403 will not fix itself, so it costs exactly one request."""
+    attempts = []
+
+    class _Resp:
+        ok = False
+        status_code = 403
+
+        def json(self) -> dict:
+            """Return an empty body."""
+            return {}
+
+    class _Session:
+        def get(self, url: str, params: dict, timeout: int) -> _Resp:  # noqa: ARG002 - signature parity
+            """Record the attempt and refuse it."""
+            attempts.append(url)
+            return _Resp()
+
+    with pytest.raises(SystemExit):
+        get_json(cast('niquests.Session', _Session()), 'https://api.example/api/v1/events')
+    assert len(attempts) == 1
+
+
+def test_get_json_retries_a_server_error_and_returns_the_recovered_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Datadog's intermittent 500 on the corrections endpoint is retried, not fatal.
+
+    The endpoint faults on its own side for roughly one call in twenty, and a
+    report makes one call per SLO, so an unretried run over an account of any
+    size reliably died part way through.
+    """
+    monkeypatch.setattr(cli.time, 'sleep', lambda _seconds: None)
+    codes = [500, 200]
+
+    class _Resp:
+        def __init__(self, status: int) -> None:
+            self.status_code = status
+            self.ok = status == 200
+
+        def json(self) -> dict:
+            """Return the fault body or the payload, per status."""
+            if self.ok:
+                return {'data': ['correction']}
+            return {'errors': ["Internal Server Error: <class 'dogweb.model.slo_correction.SloCorrection'>"]}
+
+    class _Session:
+        def get(self, url: str, params: dict | None = None, timeout: int | None = None) -> _Resp:  # noqa: ARG002
+            """Fault once, then succeed."""
+            return _Resp(codes.pop(0))
+
+    body = get_json(cast('niquests.Session', _Session()), 'https://api.example/api/v1/slo/abc/corrections')
+    assert body == {'data': ['correction']}
+    assert not codes
+
+
+def test_get_json_quotes_datadog_error_text_when_retries_run_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A persistent 500 reports the attempt count and Datadog's own explanation."""
+    monkeypatch.setattr(cli.time, 'sleep', lambda _seconds: None)
+    attempts = []
+
+    class _Resp:
+        ok = False
+        status_code = 500
+
+        def json(self) -> dict:
+            """Return Datadog's fault body."""
+            return {'errors': ['Internal Server Error: returned a result with an exception set']}
+
+    class _Session:
+        def get(self, url: str, params: dict | None = None, timeout: int | None = None) -> _Resp:  # noqa: ARG002
+            """Fault on every attempt."""
+            attempts.append(url)
+            return _Resp()
+
+    with pytest.raises(SystemExit) as exc:
+        get_json(cast('niquests.Session', _Session()), 'https://api.example/api/v1/slo/abc/corrections')
+    message = str(exc.value)
+    assert len(attempts) == cli.HTTP_RETRY_ATTEMPTS
+    assert f'after {cli.HTTP_RETRY_ATTEMPTS} attempts' in message
+    assert 'returned a result with an exception set' in message
+
+
+def test_get_json_retries_a_transport_error_before_giving_up(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A dropped connection is retried, and only the last one ends the run."""
+    monkeypatch.setattr(cli.time, 'sleep', lambda _seconds: None)
+    attempts = []
+
+    class _Session:
+        def get(self, url: str, params: dict | None = None, timeout: int | None = None) -> object:  # noqa: ARG002
+            """Fail at the transport level every time."""
+            attempts.append(url)
+            raise niquests.ConnectionError
+
+    with pytest.raises(SystemExit) as exc:
+        get_json(cast('niquests.Session', _Session()), 'https://api.example/api/v1/events')
+    assert len(attempts) == cli.HTTP_RETRY_ATTEMPTS
+    assert 'could not reach Datadog' in str(exc.value)
 
 
 def test_slo_name_handles_an_explicit_null() -> None:
