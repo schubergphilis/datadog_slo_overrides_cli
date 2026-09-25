@@ -1,3 +1,9 @@
+## v0.3.0 (2026-09-25)
+
+### Features
+
+- authenticate with a Datadog personal or service access token
+
 ## v0.2.3 (2026-09-22)
 
 ### Bug Fixes
