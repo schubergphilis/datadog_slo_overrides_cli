@@ -1997,9 +1997,9 @@ def envrc_template() -> str:
         'export DD_API_KEY="$(vault kv get -field=value secret/audit/datadog-api-key)"\n'
         'export DD_APP_KEY="$(vault kv get -field=value secret/audit/datadog-application-key)"\n'
         '\n'
-        '# Or authenticate with a personal (ddpat_) or service (ddsat_) access token instead;\n'
+        '# Or authenticate with a service access token (ddsat_) minted fresh by Vault instead;\n'
         '# it needs no API key and wins over the key pair when set:\n'
-        '# export DD_BEARER_TOKEN="$(vault kv get -field=value secret/audit/datadog-access-token)"\n'
+        '# export DD_BEARER_TOKEN="$(vault kv get --field=token datadog/sat/slo-overrides-rw)"\n'
     )
 
 
