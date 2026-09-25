@@ -17,7 +17,7 @@
 [![Changelog](https://img.shields.io/badge/changelog-Keep%20a%20Changelog%201.1.0-orange)](https://keepachangelog.com/en/1.1.0/)
 [![Documentation: Diátaxis](https://img.shields.io/badge/docs-Di%C3%A1taxis-009485?logo=readthedocs&logoColor=white)](https://diataxis.fr/)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/features/actions)
-[![Coverage](https://img.shields.io/badge/coverage-65%25-orange)](https://coverage.readthedocs.io/)
+[![Coverage](https://img.shields.io/badge/coverage-84%25-green)](https://coverage.readthedocs.io/)
 [![pyscn quality](https://img.shields.io/badge/pyscn-not%20rated-lightgrey)](https://pyscn.ludo-tech.org)
 
 CLI to set overrides idempotently for multiple SLO's
@@ -53,24 +53,35 @@ Check the installed version with `datadog-slo-overrides --version`.
 
 ### Credentials
 
-The tool never stores credentials. They are resolved in this order (first wins):
+The tool never stores credentials. Authenticate with either:
 
-1. `--api-key` / `--app-key` flags
-2. `DD_API_KEY` / `DD_APP_KEY` environment variables
+- a Datadog [personal access token](https://docs.datadoghq.com/account_management/personal-access-tokens/)
+  (`ddpat_…`) or [service access token](https://docs.datadoghq.com/account_management/service-access-tokens/)
+  (`ddsat_…`), via `--bearer-token` / `DD_BEARER_TOKEN`. It is sent as `Authorization: Bearer <token>`
+  and needs no API key; or
+- an API key plus application key, via `--api-key` / `--app-key` or `DD_API_KEY` / `DD_APP_KEY`.
+
+When a bearer token is present it is used, and any API/app keys are ignored. Each value is
+resolved in this order (first wins):
+
+1. the `--bearer-token` / `--api-key` / `--app-key` flags
+2. the `DD_BEARER_TOKEN` / `DD_API_KEY` / `DD_APP_KEY` environment variables
 3. an optional `.envrc` in the config dir, loaded via [direnv](https://direnv.net/)
 
-direnv-loaded values can never override a flag or a real environment variable.
+direnv is only consulted when the flags and environment don't already give usable credentials,
+so a direnv-loaded value can never override a flag or a real environment variable.
 
 **Optional direnv setup** (keep secret-fetching logic in a file that direnv's approval model governs,
 rather than the tool executing shell itself):
 
 ```sh
 datadog-slo-overrides init-envrc                 # writes ~/.config/datadog-slo-overrides/.envrc
-# it pre-fills DD_API_KEY / DD_APP_KEY exports; review and adjust the source if needed, then:
+# it pre-fills DD_API_KEY / DD_APP_KEY exports (and a commented-out DD_BEARER_TOKEN);
+# review and adjust the source if needed, then:
 direnv allow ~/.config/datadog-slo-overrides
 ```
 
-If the `.envrc` is present but unapproved, or doesn't export the keys, the tool prints an
+If the `.envrc` is present but unapproved, or doesn't export usable credentials, the tool prints an
 actionable hint instead of failing silently. The config dir honours `XDG_CONFIG_HOME`.
 
 ### Selecting SLOs

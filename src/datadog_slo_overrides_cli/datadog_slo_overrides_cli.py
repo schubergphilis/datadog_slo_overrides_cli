@@ -25,7 +25,7 @@ import subprocess
 import sys
 import time
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from importlib.metadata import PackageNotFoundError
@@ -90,6 +90,17 @@ CONFIG_KEYS = ('site', 'timezone', 'category', 'strategy')
 # Datadog credential environment variables (also the names an optional .envrc exports).
 API_KEY_ENV = 'DD_API_KEY'
 APP_KEY_ENV = 'DD_APP_KEY'
+# A personal (ddpat_) or service (ddsat_) access token, sent as a Bearer token in
+# place of the key pair. Same name the Datadog Terraform/Pulumi providers read.
+BEARER_TOKEN_ENV = 'DD_BEARER_TOKEN'  # noqa: S105 - an env var name, not a secret
+MISSING_CREDENTIALS = (
+    f'error: provide --bearer-token (or set {BEARER_TOKEN_ENV}), '
+    f'or --api-key/--app-key (or set {API_KEY_ENV} / {APP_KEY_ENV})'
+)
+BEARER_TOKEN_HELP = (
+    'Datadog personal (ddpat_) or service (ddsat_) access token, used instead of the '
+    f'API/app keys (or env {BEARER_TOKEN_ENV}, or a direnv-loaded .envrc).'
+)
 
 APP_NAME = 'datadog-slo-overrides'
 PACKAGE_NAME = 'datadog_slo_overrides_cli'
@@ -264,6 +275,31 @@ class Correction:
         if self.rrule:
             attrs['rrule'] = self.rrule
         return attrs
+
+
+@dataclass(frozen=True)
+class Credentials:
+    """How to authenticate to Datadog: a bearer token, or an API/application key pair.
+
+    A bearer token (PAT or SAT) needs no API key, and takes precedence over the
+    key pair when both are present. Values are kept out of ``repr`` so a stray
+    print or log line can't leak them.
+    """
+
+    api_key: str | None = field(default=None, repr=False)
+    app_key: str | None = field(default=None, repr=False)
+    bearer_token: str | None = field(default=None, repr=False)
+
+    @property
+    def usable(self) -> bool:
+        """Return True if either a bearer token or a full key pair is present."""
+        return bool(self.bearer_token or (self.api_key and self.app_key))
+
+    def headers(self) -> dict[str, str]:
+        """Return the auth headers for these credentials."""
+        if self.bearer_token:
+            return {'Authorization': f'Bearer {self.bearer_token}'}
+        return {'DD-API-KEY': self.api_key or '', 'DD-APPLICATION-KEY': self.app_key or ''}
 
 
 @dataclass(frozen=True)
@@ -566,7 +602,10 @@ def get_json(session: niquests.Session, url: str, params: dict[str, str] | None 
     if not resp.ok:
         hint = ''
         if resp.status_code in HTTP_AUTH_FAILURES:
-            hint = f'; check {API_KEY_ENV} / {APP_KEY_ENV} are valid and the app key has read scope'
+            hint = (
+                f'; check {BEARER_TOKEN_ENV} (or {API_KEY_ENV} / {APP_KEY_ENV}) is valid '
+                'and the token or app key has read scope'
+            )
         elif resp.status_code == HTTP_RATE_LIMITED:
             hint = '; the account is rate limited, retry with a shorter window'
         elif retryable_status(resp.status_code):
@@ -1826,24 +1865,17 @@ def find_existing_corrections(
     return existing
 
 
-def build_session(api_key: str, app_key: str) -> niquests.Session:
+def build_session(credentials: Credentials) -> niquests.Session:
     """Return a Datadog session pre-loaded with the auth headers.
 
     Args:
-        api_key: Datadog API key.
-        app_key: Datadog application key.
+        credentials: The bearer token or key pair to authenticate with.
 
     Returns:
         The configured session.
     """
     session = niquests.Session()
-    session.headers.update(
-        {
-            'DD-API-KEY': api_key,
-            'DD-APPLICATION-KEY': app_key,
-            'Content-Type': 'application/json',
-        },
-    )
+    session.headers.update({**credentials.headers(), 'Content-Type': 'application/json'})
     return session
 
 
@@ -1943,8 +1975,8 @@ def config_template() -> str:
     """Return the starter config file contents (non-secret defaults only)."""
     return (
         f'# {APP_NAME} config — non-secret defaults only.\n'
-        '# Credentials are NEVER read from here: pass --api-key/--app-key or set\n'
-        '# DD_API_KEY / DD_APP_KEY (e.g. via direnv + Vault).\n'
+        '# Credentials are NEVER read from here: pass --bearer-token or --api-key/--app-key,\n'
+        '# or set DD_BEARER_TOKEN or DD_API_KEY / DD_APP_KEY (e.g. via direnv + Vault).\n'
         '\n'
         f'site = "{DEFAULT_SITE}"\n'
         f'timezone = "{DEFAULT_TIMEZONE}"\n'
@@ -1958,12 +1990,16 @@ def envrc_template() -> str:
     return (
         f'# Credentials for {APP_NAME}, loaded on demand by direnv — never sourced by the tool.\n'
         '# After editing, approve it:  direnv allow <this directory>\n'
-        '# Read only as a fallback: an explicit --api-key/--app-key or an already-set\n'
-        '# DD_API_KEY / DD_APP_KEY in your shell always take precedence.\n'
+        '# Read only as a fallback: an explicit --bearer-token/--api-key/--app-key or an\n'
+        '# already-set DD_BEARER_TOKEN / DD_API_KEY / DD_APP_KEY in your shell take precedence.\n'
         '\n'
         '# Fetch from Vault (needs a valid token; run `vault login` first):\n'
         'export DD_API_KEY="$(vault kv get -field=value secret/audit/datadog-api-key)"\n'
         'export DD_APP_KEY="$(vault kv get -field=value secret/audit/datadog-application-key)"\n'
+        '\n'
+        '# Or authenticate with a personal (ddpat_) or service (ddsat_) access token instead;\n'
+        '# it needs no API key and wins over the key pair when set:\n'
+        '# export DD_BEARER_TOKEN="$(vault kv get -field=value secret/audit/datadog-access-token)"\n'
     )
 
 
@@ -2028,8 +2064,23 @@ def load_direnv_env(directory: Path) -> tuple[dict[str, str], str]:
     return {key: value for key, value in data.items() if isinstance(value, str)}, result.stderr
 
 
+def missing_key_names(credentials: Credentials) -> list[str]:
+    """Return the key-pair variables still unset, or [] when the credentials are usable.
+
+    Args:
+        credentials: The credentials resolved so far.
+
+    Returns:
+        The unset names among ``DD_API_KEY`` / ``DD_APP_KEY``, empty if nothing is missing.
+    """
+    if credentials.usable:
+        return []
+    pairs = ((API_KEY_ENV, credentials.api_key), (APP_KEY_ENV, credentials.app_key))
+    return [name for name, value in pairs if not value]
+
+
 def _warn_if_envrc_lacks_keys(directory: Path, direnv_env: dict[str, str], missing: list[str], stderr: str) -> None:
-    """Warn when an evaluated ``.envrc`` didn't provide the credential keys still needed.
+    """Warn when an evaluated ``.envrc`` didn't provide the credentials still needed.
 
     ``direnv_env`` is non-empty only when direnv actually evaluated an approved
     ``.envrc`` (it always includes direnv's own bookkeeping vars), which lets us
@@ -2040,13 +2091,13 @@ def _warn_if_envrc_lacks_keys(directory: Path, direnv_env: dict[str, str], missi
     Args:
         directory: Directory whose ``.envrc`` was evaluated.
         direnv_env: Variables direnv exported (empty if it didn't run/was blocked).
-        missing: Required credential variables still unset after the merge.
+        missing: Key-pair variables still unset after the merge (see ``missing_key_names``).
         stderr: direnv's stderr from evaluating the ``.envrc``.
     """
     if not (direnv_env and missing):
         return
     typer.echo(
-        f'{directory}/.envrc was loaded via direnv but did not provide: {", ".join(missing)}',
+        f'{directory}/.envrc was loaded via direnv but did not provide {BEARER_TOKEN_ENV} or {" / ".join(missing)}',
         err=True,
     )
     diagnostic = stderr.strip()
@@ -2056,38 +2107,55 @@ def _warn_if_envrc_lacks_keys(directory: Path, direnv_env: dict[str, str], missi
             typer.echo(f'  {line}', err=True)
 
 
-def resolve_credentials(api_key: str | None, app_key: str | None, directory: Path) -> tuple[str | None, str | None]:
+def _note_if_keys_ignored(credentials: Credentials) -> None:
+    """Tell the user when a bearer token overrides API/app keys that were also supplied.
+
+    The token always wins, whatever source each value came from, so keys passed
+    as flags in a shell that happens to export ``DD_BEARER_TOKEN`` would otherwise
+    be dropped silently and the run would act with the token's identity and scopes.
+
+    Args:
+        credentials: The resolved credentials.
+    """
+    if credentials.bearer_token and (credentials.api_key or credentials.app_key):
+        typer.echo(f'note: using the bearer token ({BEARER_TOKEN_ENV}); ignoring the API/app keys', err=True)
+
+
+def resolve_credentials(given: Credentials, directory: Path) -> Credentials:
     """Fill missing credentials from a direnv-loaded ``.envrc``, without overriding given values.
 
     Precedence (highest first): an explicit ``--flag`` or real env var (already
-    folded into ``api_key``/``app_key`` by the CLI layer), then variables loaded
-    from ``directory/.envrc`` via direnv. direnv is only consulted when a key is
-    still missing, so it can never override a flag or a real environment variable.
-    If the ``.envrc`` is evaluated but doesn't export the still-missing keys, an
-    actionable hint naming them is printed.
+    folded into ``given`` by the CLI layer), then variables loaded from
+    ``directory/.envrc`` via direnv. direnv is only consulted when ``given`` is
+    not usable on its own (no bearer token and an incomplete key pair), so it
+    can never override a flag or a real environment variable. If the ``.envrc``
+    is evaluated but still leaves the credentials unusable, an actionable hint
+    naming what is missing is printed.
 
     Args:
-        api_key: API key from --api-key or the DD_API_KEY env var, if any.
-        app_key: App key from --app-key or the DD_APP_KEY env var, if any.
+        given: Credentials from the --bearer-token/--api-key/--app-key flags or their env vars.
         directory: Directory whose ``.envrc`` provides the fallback.
 
     Returns:
-        The resolved ``(api_key, app_key)`` pair (either may still be None).
+        The resolved credentials (possibly still not usable).
     """
-    if api_key and app_key:
-        return api_key, app_key
+    if given.usable:
+        _note_if_keys_ignored(given)
+        return given
     direnv_env, stderr = load_direnv_env(directory)
-    api_key = api_key or direnv_env.get(API_KEY_ENV)
-    app_key = app_key or direnv_env.get(APP_KEY_ENV)
-    missing = [name for name, value in ((API_KEY_ENV, api_key), (APP_KEY_ENV, app_key)) if not value]
-    _warn_if_envrc_lacks_keys(directory, direnv_env, missing, stderr)
-    return api_key, app_key
+    resolved = Credentials(
+        api_key=given.api_key or direnv_env.get(API_KEY_ENV),
+        app_key=given.app_key or direnv_env.get(APP_KEY_ENV),
+        bearer_token=given.bearer_token or direnv_env.get(BEARER_TOKEN_ENV),
+    )
+    _warn_if_envrc_lacks_keys(directory, direnv_env, missing_key_names(resolved), stderr)
+    _note_if_keys_ignored(resolved)
+    return resolved
 
 
 def build_config(
     *,
-    api_key: str | None,
-    app_key: str | None,
+    credentials: Credentials,
     site: str,
     timezone: str,
     category: str,
@@ -2103,8 +2171,7 @@ def build_config(
     """Validate already-resolved settings into a RunConfig (exits on bad input).
 
     Args:
-        api_key: Datadog API key (required).
-        app_key: Datadog application key (required).
+        credentials: A bearer token or API/application key pair (required).
         site: Datadog site, e.g. ``datadoghq.eu``.
         timezone: IANA timezone for the window.
         category: Correction category (see ``VALID_CATEGORIES``).
@@ -2120,8 +2187,8 @@ def build_config(
     Returns:
         The validated run configuration.
     """
-    if not api_key or not app_key:
-        sys.exit('error: provide --api-key/--app-key or set DD_API_KEY / DD_APP_KEY')
+    if not credentials.usable:
+        sys.exit(MISSING_CREDENTIALS)
     if category not in VALID_CATEGORIES:
         sys.exit(f'error: invalid category {category!r}; choose from {", ".join(VALID_CATEGORIES)}')
     if strategy not in STRATEGIES:
@@ -2151,7 +2218,7 @@ def build_config(
 
     server_query, required_tags = resolve_tag_filter(tags, tags_query)
     return RunConfig(
-        session=build_session(api_key, app_key),
+        session=build_session(credentials),
         base=f'https://api.{site}',
         tags_query=server_query,
         required_tags=required_tags,
@@ -2310,13 +2377,20 @@ def set_command(
         None,
         '--api-key',
         envvar=API_KEY_ENV,
-        help='Datadog API key (or env DD_API_KEY, or a direnv-loaded .envrc).',
+        help='Datadog API key (or env DD_API_KEY, or a direnv-loaded .envrc). Ignored if a bearer token is set.',
     ),
     app_key: str = typer.Option(
         None,
         '--app-key',
         envvar=APP_KEY_ENV,
-        help='Datadog application key (or env DD_APP_KEY, or a direnv-loaded .envrc).',
+        help='Datadog application key (or env DD_APP_KEY, or a direnv-loaded .envrc). '
+        'Ignored if a bearer token is set.',
+    ),
+    bearer_token: str = typer.Option(
+        None,
+        '--bearer-token',
+        envvar=BEARER_TOKEN_ENV,
+        help=BEARER_TOKEN_HELP,
     ),
     config: Path = typer.Option(
         DEFAULT_CONFIG_PATH,
@@ -2332,10 +2406,9 @@ def set_command(
     """Preview (default) or --apply SLO corrections to every SLO matching the tags."""
     settings = load_config(config)
     # Fill missing credentials from an optional direnv-managed .envrc next to the config.
-    resolved_api_key, resolved_app_key = resolve_credentials(api_key, app_key, config.parent)
+    credentials = resolve_credentials(Credentials(api_key, app_key, bearer_token), config.parent)
     cfg = build_config(
-        api_key=resolved_api_key,
-        app_key=resolved_app_key,
+        credentials=credentials,
         site=site or settings.get('site') or DEFAULT_SITE,
         timezone=timezone or settings.get('timezone') or DEFAULT_TIMEZONE,
         category=(category.value if category else None) or settings.get('category') or DEFAULT_CATEGORY,
@@ -2382,13 +2455,20 @@ def list_command(
         None,
         '--api-key',
         envvar=API_KEY_ENV,
-        help='Datadog API key (or env DD_API_KEY, or a direnv-loaded .envrc).',
+        help='Datadog API key (or env DD_API_KEY, or a direnv-loaded .envrc). Ignored if a bearer token is set.',
     ),
     app_key: str = typer.Option(
         None,
         '--app-key',
         envvar=APP_KEY_ENV,
-        help='Datadog application key (or env DD_APP_KEY, or a direnv-loaded .envrc).',
+        help='Datadog application key (or env DD_APP_KEY, or a direnv-loaded .envrc). '
+        'Ignored if a bearer token is set.',
+    ),
+    bearer_token: str = typer.Option(
+        None,
+        '--bearer-token',
+        envvar=BEARER_TOKEN_ENV,
+        help=BEARER_TOKEN_HELP,
     ),
     config: Path = typer.Option(
         DEFAULT_CONFIG_PATH,
@@ -2412,13 +2492,13 @@ def list_command(
     reported.
     """
     settings = load_config(config)
-    resolved_api_key, resolved_app_key = resolve_credentials(api_key, app_key, config.parent)
-    if not resolved_api_key or not resolved_app_key:
-        sys.exit('error: provide --api-key/--app-key or set DD_API_KEY / DD_APP_KEY')
+    credentials = resolve_credentials(Credentials(api_key, app_key, bearer_token), config.parent)
+    if not credentials.usable:
+        sys.exit(MISSING_CREDENTIALS)
     tz_name = timezone or settings.get('timezone') or DEFAULT_TIMEZONE
     tz = resolve_timezone(tz_name)
     server_query, required_tags = resolve_list_tags(list(tag or []), tags_query)
-    session = build_session(resolved_api_key, resolved_app_key)
+    session = build_session(credentials)
     base = f'https://api.{site or settings.get("site") or DEFAULT_SITE}'
     code = report_net_downtime(
         session,
