@@ -1,3 +1,9 @@
+## v0.3.1 (2026-09-25)
+
+### Bug Fixes
+
+- mint the bearer token from Vault in the init-envrc template
+
 ## v0.3.0 (2026-09-25)
 
 ### Features
