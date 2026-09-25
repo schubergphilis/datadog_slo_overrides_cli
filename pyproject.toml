@@ -186,7 +186,8 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*.py" = ["S101", "S311", "RUF012", "PLR2004"]
+# Tests pass fake credentials as literals (S106).
+"tests/*.py" = ["S101", "S106", "S311", "RUF012", "PLR2004"]
 # Typer's API is built on call-expression defaults (B008) and boolean flag options
 # (FBT001/FBT002/FBT003 — `typer.Option(False, ...)`); the resolved CLI/build
 # functions also legitimately take many parameters (PLR0913). Idiomatic Typer, not smells.

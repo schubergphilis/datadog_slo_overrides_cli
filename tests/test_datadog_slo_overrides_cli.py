@@ -46,6 +46,7 @@ from datadog_slo_overrides_cli.datadog_slo_overrides_cli import (
     SKIP_IF_EXACT,
     SKIP_IF_OVERLAP,
     Correction,
+    Credentials,
     DowntimeRow,
     Transition,
     _matches,
@@ -168,8 +169,7 @@ def test_build_config_requires_credentials() -> None:
     """Missing credentials abort before any network work."""
     with pytest.raises(SystemExit):
         build_config(
-            api_key=None,
-            app_key=None,
+            credentials=Credentials(),
             site='datadoghq.eu',
             timezone='UTC',
             category='Scheduled Maintenance',
@@ -187,8 +187,7 @@ def test_build_config_requires_credentials() -> None:
 def test_build_config_dry_run_has_no_correction() -> None:
     """A dry run resolves a config with no Correction attached."""
     cfg = build_config(
-        api_key='key',
-        app_key='app',
+        credentials=Credentials('key', 'app'),
         site='datadoghq.eu',
         timezone='UTC',
         category='Scheduled Maintenance',
@@ -210,8 +209,7 @@ def test_build_config_requires_description_with_apply() -> None:
     """Applying without a (non-blank) description aborts, even with a valid window."""
     with pytest.raises(SystemExit):
         build_config(
-            api_key='key',
-            app_key='app',
+            credentials=Credentials('key', 'app'),
             site='datadoghq.eu',
             timezone='UTC',
             category='Scheduled Maintenance',
@@ -756,6 +754,7 @@ def test_get_json_turns_an_auth_failure_into_advice() -> None:
     message = str(exc.value)
     assert 'v1/events' in message
     assert 'DD_APP_KEY' in message
+    assert 'DD_BEARER_TOKEN' in message
     assert 'sources=alert' not in message
 
 
@@ -1111,7 +1110,8 @@ def test_resolve_credentials_prefers_explicit_values(tmp_path: Path, monkeypatch
         raise AssertionError(msg)
 
     monkeypatch.setattr(cli, 'load_direnv_env', _fail)
-    assert resolve_credentials('flag-key', 'flag-app', tmp_path) == ('flag-key', 'flag-app')
+    given = Credentials('flag-key', 'flag-app')
+    assert resolve_credentials(given, tmp_path) is given
 
 
 def test_resolve_credentials_fills_missing_from_direnv_without_override(
@@ -1122,7 +1122,7 @@ def test_resolve_credentials_fills_missing_from_direnv_without_override(
     monkeypatch.setattr(
         cli, 'load_direnv_env', lambda _d: ({'DD_API_KEY': 'direnv-key', 'DD_APP_KEY': 'direnv-app'}, '')
     )
-    assert resolve_credentials('flag-key', None, tmp_path) == ('flag-key', 'direnv-app')
+    assert resolve_credentials(Credentials('flag-key'), tmp_path) == Credentials('flag-key', 'direnv-app')
 
 
 def test_resolve_credentials_surfaces_direnv_reason_when_keys_missing(
@@ -1135,11 +1135,111 @@ def test_resolve_credentials_surfaces_direnv_reason_when_keys_missing(
     # and the reason is on stderr.
     vault_error = 'Error making API request.\nCode: 403. Errors:\n* permission denied'
     monkeypatch.setattr(cli, 'load_direnv_env', lambda _d: ({'DIRENV_DIFF': 'x'}, vault_error))
-    assert resolve_credentials(None, None, tmp_path) == (None, None)
+    assert resolve_credentials(Credentials(), tmp_path) == Credentials()
     err = capsys.readouterr().err
     assert 'DD_API_KEY' in err
     assert 'DD_APP_KEY' in err
+    assert 'DD_BEARER_TOKEN' in err
     assert 'did not provide' in err
     assert 'direnv reported:' in err
     assert '403' in err
     assert 'permission denied' in err
+
+
+def test_credentials_bearer_token_replaces_the_key_headers() -> None:
+    """A bearer token alone is usable and is sent instead of the DD-API-KEY/DD-APPLICATION-KEY pair."""
+    creds = Credentials(api_key='key', app_key='app', bearer_token='ddpat_x')
+    assert creds.usable
+    assert creds.headers() == {'Authorization': 'Bearer ddpat_x'}
+    assert Credentials(bearer_token='ddsat_x').usable
+
+
+def test_credentials_key_pair_needs_both_keys() -> None:
+    """Without a token, only a complete key pair is usable, and it is sent as the two key headers."""
+    assert not Credentials(api_key='key').usable
+    assert Credentials('key', 'app').headers() == {'DD-API-KEY': 'key', 'DD-APPLICATION-KEY': 'app'}
+
+
+def test_build_session_sends_the_bearer_token() -> None:
+    """The session authenticates with the bearer token and never leaks key headers alongside it."""
+    session = cli.build_session(Credentials(bearer_token='ddpat_x'))
+    assert session.headers['Authorization'] == 'Bearer ddpat_x'
+    assert 'DD-API-KEY' not in session.headers
+    assert 'DD-APPLICATION-KEY' not in session.headers
+
+
+def test_resolve_credentials_accepts_a_token_without_direnv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A bearer token alone is enough, so direnv is never consulted for the missing keys."""
+
+    def _fail(_directory: Path) -> dict[str, str]:
+        msg = 'direnv must not be consulted when a bearer token is already present'
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(cli, 'load_direnv_env', _fail)
+    given = Credentials(bearer_token='ddpat_flag')
+    assert resolve_credentials(given, tmp_path) is given
+
+
+def test_resolve_credentials_fills_a_token_from_direnv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A direnv-exported DD_BEARER_TOKEN makes otherwise incomplete credentials usable, without a warning."""
+    monkeypatch.setattr(cli, 'load_direnv_env', lambda _d: ({'DD_BEARER_TOKEN': 'ddsat_direnv'}, ''))
+    resolved = resolve_credentials(Credentials(api_key='flag-key'), tmp_path)
+    assert resolved == Credentials(api_key='flag-key', bearer_token='ddsat_direnv')
+    assert resolved.usable
+
+
+def test_build_config_accepts_a_bearer_token_alone() -> None:
+    """A run configured with only a bearer token authenticates with it."""
+    cfg = build_config(
+        credentials=Credentials(bearer_token='ddpat_x'),
+        site='datadoghq.eu',
+        timezone='UTC',
+        category='Scheduled Maintenance',
+        strategy=SKIP_IF_COVERED,
+        description='',
+        tags=['app:gitlab'],
+        tags_query=None,
+        start=None,
+        end=None,
+        rrule=None,
+        apply=False,
+    )
+    assert cfg.session.headers['Authorization'] == 'Bearer ddpat_x'
+
+
+def _capture_list_session(monkeypatch: pytest.MonkeyPatch) -> dict[str, niquests.Session]:
+    """Stub out direnv and the report so `list` only builds its session, which is captured."""
+    captured: dict[str, niquests.Session] = {}
+
+    def _report(session: niquests.Session, *_args: object, **_kwargs: object) -> int:
+        captured['session'] = session
+        return 0
+
+    monkeypatch.setattr(cli, 'load_direnv_env', lambda _d: ({}, ''))
+    monkeypatch.setattr(cli, 'report_net_downtime', _report)
+    return captured
+
+
+def test_list_authenticates_with_the_bearer_token_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DD_BEARER_TOKEN alone reaches the session as a Bearer header."""
+    captured = _capture_list_session(monkeypatch)
+    result = runner.invoke(app, ['list', '--config', '/nonexistent/config.toml'], env={'DD_BEARER_TOKEN': 'ddsat_env'})
+    assert result.exit_code == 0, result.output
+    assert captured['session'].headers['Authorization'] == 'Bearer ddsat_env'
+
+
+def test_list_notes_when_the_token_overrides_key_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Key flags alongside a token are ignored, and the user is told so on stderr."""
+    captured = _capture_list_session(monkeypatch)
+    args = ['list', '--config', '/nonexistent/config.toml', '--api-key', 'k', '--app-key', 'a']
+    result = runner.invoke(app, args, env={'DD_BEARER_TOKEN': 'ddpat_env'})
+    assert result.exit_code == 0, result.output
+    assert captured['session'].headers['Authorization'] == 'Bearer ddpat_env'
+    assert 'DD-API-KEY' not in captured['session'].headers
+    assert 'ignoring the API/app keys' in result.stderr
+
+
+def test_credentials_repr_hides_the_secrets() -> None:
+    """No credential value appears in the dataclass repr."""
+    text = repr(Credentials('key-secret', 'app-secret', 'ddpat_secret'))
+    assert 'secret' not in text
